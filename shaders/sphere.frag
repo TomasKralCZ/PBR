@@ -1,4 +1,4 @@
-#version 420 core
+#version 460 core
 
 in VsOut {
     vec2 texCoords;
@@ -7,9 +7,12 @@ in VsOut {
 } vsOut;
 
 layout (std140, binding = 4) uniform Material {
-    uniform vec4 albedo;
-    uniform float roughness;
-    uniform float metalness;
+    uniform vec4 base_color_factor;
+    uniform vec4 emissive_factor;
+    uniform float metallic_factor;
+    uniform float roughness_factor;
+    uniform float normal_scale;
+    uniform float occlusion_strength;
 };
 
 layout (std140, binding = 5) uniform Lighting {
@@ -18,6 +21,8 @@ layout (std140, binding = 5) uniform Lighting {
     uniform vec4 camPos;
     uniform uint lights;
 };
+
+layout(binding = 5) uniform samplerCube irradiance_map;
 
 out vec4 FragColor;
 
@@ -69,19 +74,21 @@ float geometryShadowing(vec3 normal, vec3 viewDir, vec3 lightDir, float roughnes
     return ggx1 * ggx2;
 }
 
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
 void main() {
     float gamma = 2.2;
 
-    // Texture sampling
-    vec4 g_albedo = vec4(pow(albedo.rgb, vec3(gamma)), albedo.w);
+    vec4 g_albedo = vec4(pow(base_color_factor.rgb, vec3(gamma)), base_color_factor.w);
 
     vec3 f0 = vec3(0.04);
-    f0 = mix(f0, albedo.rgb, metalness);
+    f0 = mix(f0, base_color_factor.rgb, metallic_factor);
 
     vec3 viewDir = normalize(camPos.xyz - vsOut.fragPos);
     vec3 normal = normalize(vsOut.normal);
 
-    // Per-light radiance
     vec3 totalRadiance = vec3(0.);
     for (int i = 0; i < lights; i++) {
         vec3 lightDir = normalize(lightPositions[i].xyz - vsOut.fragPos);
@@ -92,8 +99,8 @@ void main() {
         vec3 radiance = lightColors[i].xyz;
 
         // Cook-Torrance BRDF
-        float normalDistribution = normalDistribution(normal, halfway, roughness);
-        float geometry = geometryShadowing(normal, viewDir, lightDir, roughness);
+        float normalDistribution = normalDistribution(normal, halfway, roughness_factor + 0.01);
+        float geometry = geometryShadowing(normal, viewDir, lightDir, roughness_factor + 0.01);
 
         vec3 fresnel = fresnelSchlick(f0, cosTheta);
 
@@ -103,26 +110,22 @@ void main() {
         vec3 specular = numerator / (denominator + 0.00001);
 
         vec3 kS = fresnel;
-        // for energy conservation, the diffuse and specular light can't
-        // be above 1.0 (unless the surface emits light); to preserve this
-        // relationship the diffuse component (kD) should equal 1.0 - kS.
         vec3 kD = vec3(1.0) - kS;
-        // multiply kD by the inverse metalness such that only non-metals
-        // have diffuse lighting, or a linear blend if partly metal (pure metals
-        // have no diffuse light).
-        kD *= 1.0 - metalness;
+        kD *= 1.0 - metallic_factor;
 
-        // scale light by NdotL
         float nl = max(dot(normal, lightDir), 0.0);
 
-        // add to outgoing radiance Lo
-        totalRadiance += ((kD * albedo.rgb / PI) + specular) * radiance * nl;
+        totalRadiance += ((kD * base_color_factor.rgb / PI) + specular) * radiance * nl;
     }
 
     // ambient
-    vec4 ambient = albedo * 0.01;
+    vec3 kS = fresnelSchlickRoughness(max(dot(normal, viewDir), 0.0), f0, roughness_factor + 0.01);
+    vec3 kD = 1.0 - kS;
+    vec3 irradiance = texture(irradiance_map, normal).rgb;
+    vec3 diffuse    = irradiance * base_color_factor.rgb;
+    vec3 ambient    = (kD * diffuse);
 
-    vec3 color = ambient.rgb + totalRadiance;
+    vec3 color = emissive_factor.rgb + ambient.rgb + totalRadiance;
 
     // HDR tonemapping
     color = color / (color + vec3(1.0));

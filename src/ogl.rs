@@ -11,9 +11,9 @@ pub mod shader;
 pub mod uniform_buffer;
 
 // Indices of the vertex attributes
-pub const POS_INDEX: u32 = 0;
-pub const TEXCOORDS_INDEX: u32 = 1;
-pub const NORMALS_INDEX: u32 = 2;
+pub const POSITION_INDEX: u32 = 0;
+pub const NORMALS_INDEX: u32 = 1;
+pub const TEXCOORDS_INDEX: u32 = 2;
 
 // Texture binding ports (units)
 pub const ALBEDO_PORT: u32 = 0;
@@ -21,6 +21,40 @@ pub const MR_PORT: u32 = 1;
 pub const NORMAL_PORT: u32 = 2;
 pub const OCCLUSION_PORT: u32 = 3;
 pub const EMISSIVE_PORT: u32 = 4;
+pub const IRRADIANCE_PORT: u32 = 5;
+
+/// Attach a float buffer to a VAO
+pub fn attach_float_buf<T: bytemuck::Pod + bytemuck::Zeroable>(
+    vao: u32,
+    buffer: &[T],
+    components: i32,
+    attrib_index: u32,
+    typ: u32,
+) -> u32 {
+    let mut buf_id: u32 = 0;
+
+    unsafe {
+        gl::CreateBuffers(1, &mut buf_id);
+
+        let bytes = bytemuck::cast_slice::<T, u8>(buffer);
+
+        gl::NamedBufferStorage(
+            buf_id,
+            bytes.len() as isize,
+            bytes.as_ptr() as _,
+            gl::DYNAMIC_STORAGE_BIT,
+        );
+
+        // attrib_index is implicitly the same as the vertex buffer binding !
+        gl::VertexArrayVertexBuffer(vao, attrib_index, buf_id, 0, size_of::<T>() as i32);
+
+        gl::EnableVertexArrayAttrib(vao, attrib_index);
+        gl::VertexArrayAttribFormat(vao, attrib_index, components, typ, gl::FALSE, 0 as _);
+        gl::VertexArrayAttribBinding(vao, attrib_index, attrib_index);
+    }
+
+    buf_id
+}
 
 /// Create an opengl buffer with floating-point content.
 ///
@@ -28,63 +62,49 @@ pub const EMISSIVE_PORT: u32 = 4;
 ///
 /// 'components', 'attrib index' and 'typ' have the same meaning as the respective
 /// arguments in glVertexAttribPointer.
-pub fn create_float_buf<T: Copy>(
+pub fn attach_float_buf_multiple_attribs<T: bytemuck::Pod + bytemuck::Zeroable>(
+    vao: u32,
     buffer: &[T],
-    components: i32,
-    attrib_index: u32,
-    typ: u32,
+    componentss: &[i32],
+    attrib_indexes: &[u32],
+    types: &[u32],
+    stride: usize,
+    offsets: &[usize],
 ) -> u32 {
-    let mut id: u32 = 0;
+    let mut buf_id: u32 = 0;
 
     unsafe {
-        gl::GenBuffers(1, &mut id as *mut _);
-        gl::BindBuffer(gl::ARRAY_BUFFER, id);
+        gl::CreateBuffers(1, &mut buf_id);
 
-        let buffer_size = buffer.len() * size_of::<T>();
+        let bytes = bytemuck::cast_slice::<T, u8>(buffer);
 
-        gl::BufferData(
-            gl::ARRAY_BUFFER,
-            buffer_size as isize,
-            // The layout of Vec3 is #[repr(C)] (struct of 3 floats), so this should be correct
-            buffer.as_ptr() as _,
-            gl::STATIC_DRAW,
+        gl::NamedBufferStorage(
+            buf_id,
+            bytes.len() as isize,
+            bytes.as_ptr() as _,
+            gl::DYNAMIC_STORAGE_BIT,
         );
 
-        gl::VertexAttribPointer(attrib_index, components, typ, gl::FALSE, 0, 0 as _);
-        gl::EnableVertexAttribArray(attrib_index);
+        let buf_binding = 0;
+
+        gl::EnableVertexAttribArray(buf_binding);
+        gl::VertexArrayVertexBuffer(vao, buf_binding, buf_id, 0, stride as i32);
+
+        for i in 0..attrib_indexes.len() {
+            gl::EnableVertexArrayAttrib(vao, attrib_indexes[i]);
+            gl::VertexArrayAttribFormat(
+                vao,
+                attrib_indexes[i],
+                componentss[i],
+                types[i],
+                gl::FALSE,
+                offsets[i] as _,
+            );
+            gl::VertexArrayAttribBinding(vao, attrib_indexes[i], buf_binding);
+        }
     }
 
-    id
-}
-
-/// Create an opengl buffer with integer content.
-///
-/// 'buffer' is a reference to a slice of T.
-///
-/// 'components', 'attrib index' and 'typ' have the same meaning as the respective
-/// arguments in glVertexAttribPointer.
-pub fn create_int_buf<T: Copy>(buffer: &[T], components: i32, attrib_index: u32, typ: u32) -> u32 {
-    let mut id: u32 = 0;
-
-    unsafe {
-        gl::GenBuffers(1, &mut id as *mut _);
-        gl::BindBuffer(gl::ARRAY_BUFFER, id);
-
-        let buffer_size = buffer.len() * size_of::<T>();
-
-        gl::BufferData(
-            gl::ARRAY_BUFFER,
-            buffer_size as isize,
-            // The layout of Vec3 is #[repr(C)] (struct of 3 floats), so it should be correct
-            buffer.as_ptr() as _,
-            gl::STATIC_DRAW,
-        );
-
-        gl::VertexAttribIPointer(attrib_index, components, typ, 0, 0 as _);
-        gl::EnableVertexAttribArray(attrib_index);
-    }
-
-    id
+    buf_id
 }
 
 pub fn init_debug() {

@@ -3,15 +3,18 @@
 //! `main` function is the entry-point
 use std::{thread, time::Duration};
 
-use camera::Camera;
+use app::AppState;
+use camera::{Camera, CameraTyp, Flycam, Orbitalcam};
 use eyre::Result;
 use glam::Vec3;
-use gui::{Ctx, Gui};
+use gui::GuiCtx;
 use renderer::Renderer;
 use scene::Scene;
 use sdl2::{keyboard::Scancode, EventPump};
 
-use window::MyWindow;
+use window::AppWindow;
+
+mod app;
 
 /// A module for working with a basic free camera.
 mod camera;
@@ -33,16 +36,18 @@ mod window;
 
 mod scene;
 
+mod util;
+
 /// Creates the window, configures OpenGL, sets up the scene and begins the render loop.
 fn main() -> Result<()> {
-    let mut window = MyWindow::new("PBR experiments - Tomáš Král")?;
+    let mut window = AppWindow::new("PBR experiments - Tomáš Král")?;
 
     ogl::init_debug();
 
+    let mut appstate = AppState::new(&window);
     let mut scene = Scene::init()?;
-    let mut gui = Gui::new();
     let mut renderer = Renderer::new()?;
-    let mut camera = Camera::new(
+    let mut flycam = Flycam::new(
         Vec3::new(0.2, 3., 7.5),
         0.05,
         0.05,
@@ -50,50 +55,61 @@ fn main() -> Result<()> {
         window.height,
     );
 
-    'render_loop: loop {
-        handle_inputs(&mut window.event_pump, &mut camera);
+    let mut orbitalcam = Orbitalcam::new(2., 0.05, window.width, window.height);
+    let mut cam_typ = CameraTyp::Orbital;
 
+    'render_loop: loop {
         window.begin_frame();
 
-        renderer.render(&mut scene, &mut camera, &window, &gui);
+        let active_cam: &mut dyn Camera = match cam_typ {
+            CameraTyp::Flycam => &mut flycam,
+            CameraTyp::Orbital => &mut orbitalcam,
+        };
 
-        let gui_ctx = Ctx {
+        handle_inputs(&mut window.event_pump, active_cam);
+
+        if let Some(model) = appstate.selected_model {
+            renderer.render(&mut scene.models[model], active_cam, &appstate);
+        }
+
+        let mut gui_ctx = GuiCtx {
             models: &mut scene.models,
-            camera: &mut camera,
+            camera: active_cam,
+            cam_typ: &mut cam_typ,
             renderer: &mut renderer,
         };
 
-        gui.create_gui(gui_ctx, &mut window.egui_ctx);
+        appstate.create_gui(&mut gui_ctx, &mut window.egui_ctx);
 
         let should_quit = window.end_frame();
         if should_quit {
             break 'render_loop;
         }
 
-        thread::sleep(Duration::from_millis(3));
+        thread::sleep(Duration::from_millis(1));
     }
 
     Ok(())
 }
 
 /// Modifies camera state based on the mouse / keyboard inputs
-fn handle_inputs(event_pump: &mut EventPump, camera: &mut Camera) {
+fn handle_inputs(event_pump: &mut EventPump, camera: &mut dyn Camera) {
     let k = event_pump.keyboard_state();
 
     if k.is_scancode_pressed(Scancode::W) {
-        camera.move_forward(1.0);
+        camera.on_forward();
     }
 
     if k.is_scancode_pressed(Scancode::S) {
-        camera.move_backward(1.0);
+        camera.on_backward();
     }
 
     if k.is_scancode_pressed(Scancode::A) {
-        camera.strafe_left(1.0);
+        camera.on_left();
     }
 
     if k.is_scancode_pressed(Scancode::D) {
-        camera.strafe_right(1.0);
+        camera.on_right();
     }
 
     let mouse_state = event_pump.mouse_state();
@@ -103,6 +119,6 @@ fn handle_inputs(event_pump: &mut EventPump, camera: &mut Camera) {
     if mouse_state.right() {
         camera.adjust_look(mouse_x, mouse_y);
     } else {
-        camera.set_x_y(mouse_x, mouse_y)
+        camera.track_mouse_pos(mouse_x, mouse_y)
     }
 }

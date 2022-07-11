@@ -14,13 +14,13 @@ use sdl2::{
 use egui_sdl2_gl as egui_backend;
 
 /// A component that handles the window creation and egui drawing
-pub struct MyWindow {
+pub struct AppWindow {
     /// SDL2 context
     _sdl_context: Sdl,
     /// SDL2 video subsystem
     _video_subsystem: VideoSubsystem,
     /// SDL2 window
-    window: Window,
+    pub window: Window,
     /// The OpenGL context
     _gl_ctx: GLContext,
     /// SDL2 event pump
@@ -39,7 +39,7 @@ pub struct MyWindow {
     pub height: u32,
 }
 
-impl MyWindow {
+impl AppWindow {
     /// Create the window with the specific title.
     ///
     /// Initializes the OpenGL context, the egui renderer and the SDL2 video subsystem.
@@ -57,7 +57,7 @@ impl MyWindow {
         // Init OpenGL
         let gl_attr = video_subsystem.gl_attr();
         gl_attr.set_context_major_version(4);
-        gl_attr.set_context_minor_version(2);
+        gl_attr.set_context_minor_version(6);
         gl_attr.set_context_profile(GLProfile::Core);
         gl_attr.set_context_flags().debug().set();
         gl_attr.set_double_buffer(true);

@@ -1,10 +1,21 @@
-#version 420 core
+#version 460 core
+
+//@DEFINES@
 
 in VsOut {
     vec2 texCoords;
     vec3 normal;
     vec3 fragPos;
 } vsOut;
+
+layout (std140, binding = 4) uniform Material {
+    uniform vec4 base_color_factor;
+    uniform vec4 emissive_factor;
+    uniform float metallic_factor;
+    uniform float roughness_factor;
+    uniform float normal_scale;
+    uniform float occlusion_strength;
+};
 
 layout (std140, binding = 5) uniform Lighting {
     uniform vec4 lightPositions[4];
@@ -15,22 +26,26 @@ layout (std140, binding = 5) uniform Lighting {
 
 layout(binding = 0) uniform sampler2D abledoTex;
 layout(binding = 1) uniform sampler2D mrTex;
+#ifdef NORMAL_MAP
 layout(binding = 2) uniform sampler2D normalTex;
+#endif
+#ifdef OCCLUSION_MAP
 layout(binding = 3) uniform sampler2D occlusionTex;
+#endif
+#ifdef EMISSIVE_MAP
 layout(binding = 4) uniform sampler2D emissiveTex;
+#endif
+
+layout(binding = 5) uniform samplerCube irradiance_map;
 
 out vec4 FragColor;
 
 const float PI = 3.14159265359;
 
-// ----------------------------------------------------------------------------
-// Easy trick to get tangent-normals to world-space to keep PBR code simplified.
-// Don't worry if you don't get what's going on; you generally want to do normal
-// mapping the usual way for performance anways; I do plan make a note of this
-// technique somewhere later in the normal mapping tutorial.
+#ifdef NORMAL_MAP
 vec3 getNormalFromMap()
 {
-    vec3 tangentNormal = texture(normalTex, vsOut.texCoords).xyz * 2.0 - 1.0;
+    vec3 tangentNormal = (normal_scale * texture(normalTex, vsOut.texCoords).xyz) * 2.0 - 1.0;
 
     vec3 Q1 = dFdx(vsOut.fragPos);
     vec3 Q2 = dFdy(vsOut.fragPos);
@@ -44,6 +59,7 @@ vec3 getNormalFromMap()
 
     return normalize(TBN * tangentNormal);
 }
+#endif
 
 vec3 fresnelSchlick(vec3 f0, float cosTheta) {
     return f0 + (1. - f0) * pow(clamp(1. - cosTheta, 0.0, 1.0), 5.);
@@ -68,6 +84,10 @@ float geometrySchlick(float dotProd, float roughness) {
     return dotProd / (dotProd * (1. - k) + k);
 }
 
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
 // Smith
 float geometryShadowing(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness) {
     float nv = max(dot(normal, viewDir), 0.0);
@@ -81,25 +101,23 @@ float geometryShadowing(vec3 normal, vec3 viewDir, vec3 lightDir, float roughnes
 void main() {
     float gamma = 2.2;
 
-    // Texture sampling
     vec4 albedo = texture(abledoTex, vsOut.texCoords);
     albedo.rgb = pow(albedo.rgb, vec3(gamma));
+    albedo *= base_color_factor;
 
-    vec4 emissive = texture(emissiveTex, vsOut.texCoords) * 0.2;
-    emissive.rgb = pow(emissive.rgb, vec3(gamma));
+    float roughness = texture(mrTex, vsOut.texCoords).g * roughness_factor;
+    float metalness = texture(mrTex, vsOut.texCoords).b * metallic_factor;
 
-    float roughness = texture(mrTex, vsOut.texCoords).g;
-    float metalness = texture(mrTex, vsOut.texCoords).b;
-
-    // Per-fragment
     vec3 f0 = vec3(0.04);
     f0 = mix(f0, albedo.rgb, metalness);
 
     vec3 viewDir = normalize(camPos.xyz - vsOut.fragPos);
-    //vec3 normal = normalize(vsOut.normal);
+#ifdef NORMAL_MAP
     vec3 normal = getNormalFromMap();
+#else
+    vec3 normal = normalize(vsOut.normal);
+#endif
 
-    // Per-light radiance
     vec3 totalRadiance = vec3(0.);
     for (int i = 0; i < lights; i++) {
         vec3 lightDir = normalize(lightPositions[i].xyz - vsOut.fragPos);
@@ -120,26 +138,33 @@ void main() {
         vec3 specular = numerator / (denominator + 0.0001);
 
         vec3 kS = fresnel;
-        // for energy conservation, the diffuse and specular light can't
-        // be above 1.0 (unless the surface emits light); to preserve this
-        // relationship the diffuse component (kD) should equal 1.0 - kS.
         vec3 kD = vec3(1.0) - kS;
-        // multiply kD by the inverse metalness such that only non-metals
-        // have diffuse lighting, or a linear blend if partly metal (pure metals
-        // have no diffuse light).
         kD *= 1.0 - metalness;
 
-        // scale light by NdotL
         float nl = max(dot(normal, lightDir), 0.0);
 
-        // add to outgoing radiance Lo
         totalRadiance += ((kD * albedo.rgb / PI) + specular) * radiance * nl;
     }
 
-    // ambient
-    vec4 ambient = albedo * 0.05 * texture(occlusionTex, vsOut.texCoords).x;
+    vec3 ambient = albedo.rgb * 0.05;
+    /* // ambient
+    vec3 kS = fresnelSchlickRoughness(max(dot(normal, viewDir), 0.0), f0, roughness_factor);
+    vec3 kD = 1.0 - kS;
+    vec3 irradiance = texture(irradiance_map, normal).rgb;
+    vec3 diffuse    = irradiance * base_color_factor.rgb;
+    vec3 ambient    = (kD * diffuse); */
 
-    vec3 color = emissive.rgb + ambient.rgb + totalRadiance;
+#ifdef OCCLUSION_MAP
+    ambient *= texture(occlusionTex, vsOut.texCoords).x * occlusion_strength;
+#endif
+
+    vec3 color = ambient.rgb + totalRadiance;
+
+#ifdef EMISSIVE_MAP
+    vec4 emissive = texture(emissiveTex, vsOut.texCoords) * 0.2;
+    emissive.rgb = pow(emissive.rgb, vec3(gamma));
+    color += emissive.rgb * emissive_factor.xyz;
+#endif
 
     // HDR tonemapping
     color = color / (color + vec3(1.0));

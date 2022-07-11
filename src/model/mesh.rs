@@ -1,8 +1,8 @@
 use std::mem::size_of;
 
+use bytemuck::offset_of;
 use eyre::{eyre, Result};
 use gl::types::GLenum;
-use glam::{Vec2, Vec3};
 use gltf::{
     image::Format,
     mesh::util::ReadIndices,
@@ -40,48 +40,67 @@ impl Mesh {
 
 /// A Primitive represents a single 'mesh' in the normal meaning of that word
 /// (a collection of vertices with a specific topology like Triangles or Lines).
-///
-// TODO: It's not needed to store all this data in RAM.
-// TODO: load vertex data without allocation and copying
 pub struct Primitive {
     /// OpenGL VAO identifier
     pub vao: u32,
-    /// Vertex indices
-    pub indices: Indices,
-    /// Vertex positions
-    pub positions: Vec<Vec3>,
-    /// Vertex texture coordinates
-    pub texcoords: Vec<Vec2>,
-    /// Vertex normals
-    pub normals: Vec<Vec3>,
-    /// An albedo texture
-    pub albedo_texture: Option<u32>,
-    /// Metallic and rougness texture
+    pub indices_type: GLenum,
+    pub num_indices: usize,
+    pub base_color_texture: Option<u32>,
+    pub base_color_factor: [f32; 4],
     pub mr_texture: Option<u32>,
-    /// Normal texture
+    pub metallic_factor: f32,
+    pub roughness_factor: f32,
     pub normal_texture: Option<u32>,
-    /// Occlusion texture
+    pub normal_scale: f32,
     pub occlusion_texture: Option<u32>,
-    /// Emissive texture
+    pub occlusion_strength: f32,
     pub emissive_texture: Option<u32>,
+    pub emissive_factor: [f32; 3],
 }
 
 impl Primitive {
     /// Creates the primitive from the gltf::Primitive struct and the DataBundle
     pub fn from_gltf(primitive: &gltf::Primitive, bundle: &mut DataBundle) -> Result<Self> {
         let mode = primitive.mode();
-
         if mode != gltf::mesh::Mode::Triangles {
             return Err(eyre!("primitive mode: '{mode:?}' is not impelemnted"));
         }
 
         let reader = primitive.reader(|buffer| Some(&bundle.buffers[buffer.index()]));
 
-        let positions = reader
+        let position_iter = reader
             .read_positions()
-            .ok_or(eyre!("primitive doesn't containt positions"))?
-            .map(Vec3::from)
-            .collect();
+            .ok_or(eyre!("primitive doesn't containt positions"))?;
+        let normals_iter = reader
+            .read_normals()
+            .ok_or(eyre!("primitive doesn't containt normals"))?;
+
+        // TODO: handle textureless models...
+        let mut texcoords_reader = None;
+        let mut texture_set = 0;
+        while let Some(reader) = reader.read_tex_coords(texture_set) {
+            if texture_set >= 1 {
+                eprintln!("WARN: primitive has more than 1 texture coordinate set");
+                break;
+            }
+
+            texcoords_reader = Some(reader.into_f32());
+
+            texture_set += 1;
+        }
+
+        let mut vertices = Vec::with_capacity(position_iter.len());
+        for (pos, normal) in position_iter.zip(normals_iter) {
+            let texcoords = texcoords_reader
+                .as_mut()
+                .and_then(|r| r.next())
+                .unwrap_or([0.; 2]);
+            vertices.push(Vertex {
+                pos,
+                normal,
+                texcoords,
+            });
+        }
 
         let indices = match reader
             .read_indices()
@@ -92,80 +111,61 @@ impl Primitive {
             ReadIndices::U8(b) => Indices::U8(b.collect()),
         };
 
-        let mut texcoords = Vec::new();
-        let mut texture_set = 0;
-        while let Some(texcoords_reader) = reader.read_tex_coords(texture_set) {
-            if texture_set >= 1 {
-                eprintln!("WARN: primitive has more than 1 texture coordinate set");
-                break;
-            }
-
-            texcoords = texcoords_reader.into_f32().map(Vec2::from).collect();
-
-            texture_set += 1;
-        }
-
-        let normals = reader
-            .read_normals()
-            .ok_or(eyre!("primitive doesn't containt normals"))?
-            .map(Vec3::from)
-            .collect();
-
         let material = primitive.material();
 
         let mut primitive = Self {
             vao: 0,
-            indices,
-            positions,
-            texcoords,
-            normals,
-            albedo_texture: None,
+            indices_type: indices.gl_type(),
+            num_indices: indices.len(),
+            base_color_texture: None,
+            base_color_factor: [1.; 4],
             mr_texture: None,
+            metallic_factor: 1.,
+            roughness_factor: 1.,
             normal_texture: None,
+            normal_scale: 1.,
             occlusion_texture: None,
+            occlusion_strength: 1.,
             emissive_texture: None,
+            emissive_factor: [0.; 3],
         };
 
-        primitive.create_buffers();
+        primitive.create_buffers(vertices, indices);
         primitive.create_textures(&material, bundle);
-
-        if primitive.vao == 0 {
-            return Err(eyre!("primitive VAO wasn't correctly initialized"));
-        }
 
         Ok(primitive)
     }
 
-    /// Creates the OpenGL buffer from the loaded vertex data
-    fn create_buffers(&mut self) {
-        let mut indices = 0;
+    /// Creates OpenGL buffers from the loaded vertex data
+    fn create_buffers(&mut self, vertices: Vec<Vertex>, indices: Indices) {
+        let mut ibo = 0;
         let mut vao = 0;
 
         unsafe {
-            gl::GenVertexArrays(1, &mut vao);
-            gl::BindVertexArray(vao);
+            gl::CreateVertexArrays(1, &mut vao);
 
-            let _positions = ogl::create_float_buf(&self.positions, 3, ogl::POS_INDEX, gl::FLOAT);
-            let _texcoords =
-                ogl::create_float_buf(&self.texcoords, 2, ogl::TEXCOORDS_INDEX, gl::FLOAT);
-            let _normals = ogl::create_float_buf(&self.normals, 3, ogl::NORMALS_INDEX, gl::FLOAT);
-
-            // Indices
-            gl::GenBuffers(1, &mut indices);
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, indices);
-
-            gl::BufferData(
-                gl::ELEMENT_ARRAY_BUFFER,
-                self.indices.size() as isize,
-                self.indices.ptr(),
-                gl::STATIC_DRAW,
+            ogl::attach_float_buf_multiple_attribs(
+                vao,
+                &vertices,
+                &[3, 3, 2],
+                &[
+                    ogl::POSITION_INDEX,
+                    ogl::NORMALS_INDEX,
+                    ogl::TEXCOORDS_INDEX,
+                ],
+                &[gl::FLOAT, gl::FLOAT, gl::FLOAT],
+                size_of::<Vertex>(),
+                &[
+                    offset_of!(Vertex, pos),
+                    offset_of!(Vertex, normal),
+                    offset_of!(Vertex, texcoords),
+                ],
             );
 
-            // Unbind buffers
-            gl::BindVertexArray(0);
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, 0);
-            gl::BindTexture(gl::TEXTURE_2D, 0);
+            // Indices
+            gl::CreateBuffers(1, &mut ibo);
+            gl::NamedBufferData(ibo, indices.size() as isize, indices.ptr(), gl::STATIC_DRAW);
+            gl::VertexArrayElementBuffer(vao, ibo);
 
             self.vao = vao;
         }
@@ -174,70 +174,51 @@ impl Primitive {
     fn create_textures(&mut self, material: &gltf::Material, bundle: &mut DataBundle) {
         let pbr = material.pbr_metallic_roughness();
 
+        self.base_color_factor = pbr.base_color_factor();
         if let Some(tex_info) = pbr.base_color_texture() {
-            if pbr.base_color_factor() != [1.0, 1.0, 1.0, 1.0] {
-                // Maybe just multiply them here instead of dealing with it in the shaders ?
-                todo!("Base color factor");
-            }
-
-            self.albedo_texture = Some(self.create_texture(&tex_info.texture(), bundle))
+            self.base_color_texture = Some(self.create_texture(&tex_info.texture(), bundle))
         };
 
+        self.metallic_factor = pbr.metallic_factor();
+        self.roughness_factor = pbr.roughness_factor();
         if let Some(tex_info) = pbr.metallic_roughness_texture() {
-            if pbr.metallic_factor() != 1.0 || pbr.roughness_factor() != 1.0 {
-                // Maybe just multiply them here instead of dealing with it in the shaders ?
-                todo!("Metallic and roughness factors");
-            }
-
             self.mr_texture = Some(self.create_texture(&tex_info.texture(), bundle))
         }
 
-        if let Some(tex_info) = material.normal_texture() {
-            if tex_info.scale() != 1.0 {
-                // Maybe just multiply them here instead of dealing with it in the shaders ?
-                todo!("Normal map scale");
+        if let Some(normal_tex_info) = material.normal_texture() {
+            self.normal_scale = normal_tex_info.scale();
+            if self.normal_scale != 1. {
+                println!("Watch out for normal scale !");
             }
-
-            self.normal_texture = Some(self.create_texture(&tex_info.texture(), bundle))
+            self.normal_texture = Some(self.create_texture(&normal_tex_info.texture(), bundle))
         }
 
-        if let Some(tex_info) = material.occlusion_texture() {
-            if tex_info.strength() != 1.0 {
-                // Maybe just multiply them here instead of dealing with it in the shaders ?
-                todo!("Occlusion texture strength");
-            }
-
-            self.occlusion_texture = Some(self.create_texture(&tex_info.texture(), bundle))
+        if let Some(occlusion_texture) = material.occlusion_texture() {
+            self.occlusion_strength = occlusion_texture.strength();
+            self.occlusion_texture = Some(self.create_texture(&occlusion_texture.texture(), bundle))
         }
 
+        self.emissive_factor = material.emissive_factor();
         if let Some(tex_info) = material.emissive_texture() {
-            if material.emissive_factor() != [1.0, 1.0, 1.0] {
-                // Maybe just multiply them here instead of dealing with it in the shaders ?
-                //todo!("Emissive texture factor");
-            }
-
             self.emissive_texture = Some(self.create_texture(&tex_info.texture(), bundle))
         }
     }
 
-    // TODO: refactor -> creating GL textures should be done elsewhere, maybe porting to Vulkan would be easier
     /// Creates a new OpenGL texture.
     ///
     /// If the texture already exists (bundle.gl_textures\[texture_index\] == Some(...)),
     /// no new texture is created, only the Texture struct is cloned.
     fn create_texture(&mut self, tex: &gltf::Texture, bundle: &mut DataBundle) -> u32 {
         let tex_index = tex.source().index();
-        if let Some(texture) = bundle.gl_textures[tex_index].clone() {
+        if let Some(texture) = bundle.gl_textures[tex_index] {
             return texture;
         }
 
         let gl_tex_id = unsafe {
             let mut texture = 0;
+            gl::CreateTextures(gl::TEXTURE_2D, 1, &mut texture);
 
-            gl::GenTextures(1, &mut texture);
-            gl::BindTexture(gl::TEXTURE_2D, texture);
-
-            self.set_texture_sampler(&tex.sampler());
+            self.set_texture_sampler(texture, &tex.sampler());
 
             let image = &bundle.images[tex_index];
 
@@ -245,24 +226,31 @@ impl Primitive {
             assert!(image.height.is_power_of_two());
 
             let (internal_format, format) = match image.format {
+                Format::R8 => (gl::R8, gl::RED),
                 Format::R8G8 => (gl::RG8, gl::RG),
                 Format::R8G8B8 => (gl::RGB8, gl::RGB),
                 Format::R8G8B8A8 => (gl::RGBA8, gl::RGBA),
                 f => unimplemented!("Unimplemented image format: '{f:?}'"),
             };
 
-            gl::TexImage2D(
-                gl::TEXTURE_2D,
+            let w = image.width as i32;
+            let h = image.height as i32;
+
+            let levels = 1 + f32::floor(f32::log2(i32::max(w, h) as f32)) as i32;
+            gl::TextureStorage2D(texture, levels, internal_format, w, h);
+            gl::TextureSubImage2D(
+                texture,
                 0,
-                internal_format as i32,
-                image.width as i32,
-                image.height as i32,
                 0,
+                0,
+                w,
+                h,
                 format,
                 gl::UNSIGNED_BYTE,
                 image.pixels.as_ptr() as _,
             );
-            gl::GenerateMipmap(gl::TEXTURE_2D);
+
+            gl::GenerateTextureMipmap(texture);
 
             texture
         };
@@ -272,7 +260,7 @@ impl Primitive {
     }
 
     /// Sets the appropriate sampler functions for the currently created texture.
-    fn set_texture_sampler(&self, sampler: &gltf::texture::Sampler) {
+    fn set_texture_sampler(&self, texture: u32, sampler: &gltf::texture::Sampler) {
         let min_filter = match sampler.min_filter() {
             Some(min_filter) => match min_filter {
                 MinFilter::Nearest => gl::NEAREST,
@@ -294,8 +282,8 @@ impl Primitive {
         };
 
         unsafe {
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, min_filter as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, mag_filter as i32);
+            gl::TextureParameteri(texture, gl::TEXTURE_MIN_FILTER, min_filter as i32);
+            gl::TextureParameteri(texture, gl::TEXTURE_MAG_FILTER, mag_filter as i32);
         }
 
         let wrap_s = match sampler.wrap_s() {
@@ -311,8 +299,8 @@ impl Primitive {
         };
 
         unsafe {
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, wrap_s as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, wrap_t as i32);
+            gl::TextureParameteri(texture, gl::TEXTURE_WRAP_S, wrap_s as i32);
+            gl::TextureParameteri(texture, gl::TEXTURE_WRAP_T, wrap_t as i32);
         }
     }
 }
@@ -320,7 +308,7 @@ impl Primitive {
 /// Vertex indices for a primitive.
 ///
 /// Better than using generics here.
-pub enum Indices {
+enum Indices {
     U32(Vec<u32>),
     U16(Vec<u16>),
     U8(Vec<u8>),
@@ -362,4 +350,12 @@ impl Indices {
             Indices::U8(_) => gl::UNSIGNED_BYTE,
         }
     }
+}
+
+#[repr(C)]
+#[derive(Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Vertex {
+    pub pos: [f32; 3],
+    pub normal: [f32; 3],
+    pub texcoords: [f32; 2],
 }
