@@ -1,4 +1,4 @@
-use glam::Vec4;
+use glam::{Vec4, vec4};
 
 use crate::ogl::uniform_buffer::UniformBufferElement;
 
@@ -24,7 +24,7 @@ impl Lighting {
             Vec4::ZERO,
         ];
 
-        let light_color = [Vec4::ONE, Vec4::ONE, Vec4::ONE, Vec4::ONE];
+        let light_color = [vec4(0.5, 0.2, 0.9, 1.0), Vec4::ONE, Vec4::ONE, Vec4::ONE];
 
         Self {
             cam_pos,

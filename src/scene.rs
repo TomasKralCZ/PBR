@@ -1,6 +1,5 @@
-use glam::Vec3;
-
 use eyre::Result;
+use glam::Vec3;
 
 use crate::{model::Model, util::timed_scope};
 
@@ -20,7 +19,6 @@ impl Scene {
                 Ok(())
             })
         };
-        add("resources/sketchfab_pbr_material_reference_chart/materials.gltf")?;
 
         add("resources/helmet/DamagedHelmet.gltf")?;
 
@@ -28,8 +26,20 @@ impl Scene {
 
         add("resources/Sphere.glb")?;
 
+        add("resources/kasatka_71m_-_three-bolt_equipment/kasatka.gltf")?;
+
         add("resources/bottle/WaterBottle.gltf")?;
-        models.last_mut().unwrap().transform = glam::Mat4::from_scale(Vec3::splat(20.0));
+
+        add("resources/santa_conga_freebiexmass/drum.gltf")?;
+
+        add("resources/antonio_mascarenha/apartment.gltf")?;
+
+        add("resources/game_ready_pbr_microscope/microscope.gltf")?;
+
+        let len = models.len();
+        models[len - 1].transform = glam::Mat4::from_scale(Vec3::splat(0.05));
+
+        models[len - 2].transform = glam::Mat4::from_scale(Vec3::splat(10.0));
 
         Ok(Self { models })
     }

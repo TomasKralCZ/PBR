@@ -3,78 +3,21 @@ use gl::types::GLenum;
 use glam::{Mat4, Vec3, Vec4};
 use std::{fs, ptr};
 
+pub mod shader_permutations;
+
+type ShaderId = u32;
+
 /// Represents an OpenGL shader.
 ///
 /// Allows setting uniforms with set_<> methods.
 ///
 /// Use the `render` method for draw calls.
+#[derive(Clone, Copy)]
 pub struct Shader {
-    pub shader_id: u32,
-    /*
-    vs_path: String,
-    fs_path: String,
-    vs_defines: String,
-    fs_defines: String, */
+    pub shader_id: ShaderId,
 }
 
 impl Shader {
-    /// Loads a vertex shader and a fragment shader from specified paths and tries to create a shader program
-    pub fn with_files(vs_path: &str, fs_path: &str) -> Result<Shader> {
-        Self::with_files_defines(vs_path, &[], fs_path, &[])
-    }
-
-    /// Loads a vertex shader and a fragment shader from specified paths and tries to create a shader program
-    pub fn with_files_defines(
-        vs_path: &str,
-        vs_defines: &[&str],
-        fs_path: &str,
-        fs_defines: &[&str],
-    ) -> Result<Shader> {
-        let mut vs_src =
-            String::from_utf8(fs::read(vs_path).wrap_err("Couldn't load the vertex shader file")?)?;
-        let mut fs_src = String::from_utf8(
-            fs::read(fs_path).wrap_err("Couldn't load the fragment shader file")?,
-        )?;
-
-        if !vs_defines.is_empty() {
-            Self::handle_defines(&mut vs_src, vs_defines)?;
-        }
-
-        if !fs_defines.is_empty() {
-            Self::handle_defines(&mut fs_src, fs_defines)?;
-        }
-
-        // Add null-terminators
-        vs_src.push('\0');
-        fs_src.push('\0');
-
-        let vs = Self::compile_shader(vs_src.as_bytes(), gl::VERTEX_SHADER)?;
-        let fs = Self::compile_shader(fs_src.as_bytes(), gl::FRAGMENT_SHADER)?;
-        let shader_id = Self::link_shaders(vs, fs)?;
-        Ok(Shader {
-            shader_id,
-            /* vs_path: String::from(vs_path),
-            fs_path: String::from(fs_path), */
-        })
-    }
-
-    fn handle_defines(src: &mut String, defines: &[&str]) -> Result<()> {
-        if let Some(index) = src.find("//@DEFINES@") {
-            for define in defines {
-                src.insert_str(index, &format!("#define {}\n", define));
-            }
-
-            Ok(())
-        } else {
-            Err(eyre!("Couldn't find //@DEFINES@ in shader source"))
-        }
-    }
-
-    /* pub fn reload(&mut self) -> Result<Self> {
-        todo!()
-        //Self::with_file_defines(&self.vs_path, &self.fs_path)
-    } */
-
     /// Use this shader to render.
     ///
     /// Draw calls should be passed using the `render` function parameter.
@@ -91,8 +34,100 @@ impl Shader {
         }
     }
 
+    /// Loads a vertex shader and a fragment shader from specified paths and tries to create a shader program
+    pub fn with_files(vs_path: &str, fs_path: &str) -> Result<Shader> {
+        let mut vs_src =
+            String::from_utf8(fs::read(vs_path).wrap_err("Couldn't load the vertex shader file")?)?;
+        let mut fs_src = String::from_utf8(
+            fs::read(fs_path).wrap_err("Couldn't load the fragment shader file")?,
+        )?;
+
+        // Add null-terminators !
+        vs_src.push('\0');
+        fs_src.push('\0');
+
+        Self::with_src_defines(vs_src, &[], fs_src, &[])
+    }
+
+    /// Loads a vertex shader and a fragment shader from specified paths and tries to create a shader program
+    pub fn with_src_defines(
+        mut vs_src: String,
+        vs_defines: &[&str],
+        mut fs_src: String,
+        fs_defines: &[&str],
+    ) -> Result<Shader> {
+        if !vs_defines.is_empty() {
+            Self::handle_defines(&mut vs_src, vs_defines)?;
+        }
+
+        if !fs_defines.is_empty() {
+            Self::handle_defines(&mut fs_src, fs_defines)?;
+        }
+
+        let vs = Self::compile_shader_glsl(vs_src.as_bytes(), gl::VERTEX_SHADER)
+            .wrap_err_with(|| format!("Error compiling shader, defines: '{:?}'", fs_defines))?;
+        let fs = Self::compile_shader_glsl(fs_src.as_bytes(), gl::FRAGMENT_SHADER)
+            .wrap_err_with(|| format!("Error compiling shader, defines: '{:?}'", fs_defines))?;
+        let shader_id = Self::link_shaders(vs, fs)?;
+        Ok(Shader { shader_id })
+    }
+
+    fn handle_defines(src: &mut String, defines: &[&str]) -> Result<()> {
+        if let Some(index) = src.find("//@DEFINES@") {
+            for define in defines {
+                src.insert_str(index, &format!("#define {}\n", define));
+            }
+
+            Ok(())
+        } else {
+            Err(eyre!("Couldn't find //@DEFINES@ in shader source"))
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn with_spv(vs_path: &str, fs_path: &str) -> Result<Self> {
+        let vs_src = fs::read(vs_path).wrap_err("Couldn't load the vertex shader file")?;
+        let fs_src = fs::read(fs_path).wrap_err("Couldn't load the fragment shader file")?;
+
+        let vs = Self::compile_shader_spv(&vs_src, gl::VERTEX_SHADER)?;
+        let fs = Self::compile_shader_spv(&fs_src, gl::FRAGMENT_SHADER)?;
+        let shader_id = Self::link_shaders(vs, fs)
+            .wrap_err_with(|| format!("Couldn't link shaders '{}', '{}'", vs_path, fs_path))?;
+        Ok(Shader { shader_id })
+    }
+
     /// Tries to compile a shader and checks for compilation errors.
-    fn compile_shader(src: &[u8], typ: GLenum) -> Result<u32> {
+    #[allow(dead_code)]
+    fn compile_shader_spv(src: &[u8], typ: GLenum) -> Result<u32> {
+        unsafe {
+            let shader = gl::CreateShader(typ);
+            gl::ShaderBinary(
+                1,
+                &shader,
+                gl::SHADER_BINARY_FORMAT_SPIR_V,
+                src.as_ptr() as _,
+                src.len() as _,
+            );
+            gl::SpecializeShader(shader, "main\0".as_ptr() as _, 0, 0 as _, 0 as _);
+
+            let mut res = 0;
+            let mut info_log = [0u8; 512];
+            let mut info_len = 0;
+
+            gl::GetShaderiv(shader, gl::COMPILE_STATUS, &mut res);
+
+            if res == 0 {
+                gl::GetShaderInfoLog(shader, 512, &mut info_len as _, info_log.as_mut_ptr() as _);
+                let info_msg = String::from_utf8_lossy(&info_log);
+                return Err(eyre!("Failed to compile a shader: '{}'", info_msg));
+            }
+
+            Ok(shader)
+        }
+    }
+
+    /// Tries to compile a shader and checks for compilation errors.
+    fn compile_shader_glsl(src: &[u8], typ: GLenum) -> Result<u32> {
         unsafe {
             let shader = gl::CreateShader(typ);
             gl::ShaderSource(shader, 1, &(src.as_ptr() as _), ptr::null_mut());
@@ -115,7 +150,7 @@ impl Shader {
     }
 
     /// Tries to link the vertex and fragment shaders (passed by their ids) and checks for linking errors.
-    fn link_shaders(vs: u32, fs: u32) -> Result<u32> {
+    fn link_shaders(vs: ShaderId, fs: ShaderId) -> Result<ShaderId> {
         unsafe {
             let shader_program = gl::CreateProgram();
             gl::AttachShader(shader_program, vs);
@@ -216,6 +251,7 @@ impl Shader {
         }
     }
 
+    // TODO: use cstr!() macro...
     /// Uniform names have to be null-terminated and have to be ASCII (I think...)
     fn check_uniform_name(name: &str) {
         assert!(name.is_ascii());

@@ -22,6 +22,57 @@ pub const NORMAL_PORT: u32 = 2;
 pub const OCCLUSION_PORT: u32 = 3;
 pub const EMISSIVE_PORT: u32 = 4;
 pub const IRRADIANCE_PORT: u32 = 5;
+pub const PREFILTER_PORT: u32 = 6;
+pub const BRDF_PORT: u32 = 7;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Default)]
+pub struct QuadVertex {
+    pub pos: [f32; 3],
+    pub texcoords: [f32; 2],
+}
+
+#[rustfmt::skip]
+pub const QUAD_VERTICES: [QuadVertex; 4] = [
+    QuadVertex {pos: [-1., 1., 0.],texcoords: [0., 1.] },
+    QuadVertex {pos: [-1., -1., 0.],texcoords: [0., 0.] },
+    QuadVertex {pos: [1., 1., 0.],texcoords: [1., 1.] },
+    QuadVertex {pos: [1., -1., 0.],texcoords: [1., 0.] },
+];
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CubeVertex {
+    pos: [f32; 3],
+}
+
+#[rustfmt::skip]
+pub const CUBE_VERTICES: [CubeVertex; 8] = [
+    CubeVertex{pos: [-1., -1., 1.]},
+    CubeVertex{pos: [1., -1., 1.]},
+    CubeVertex{pos: [1., 1., 1.]},
+    CubeVertex{pos: [-1., 1., 1.]},
+    CubeVertex{pos: [-1., -1., -1.]},
+    CubeVertex{pos: [1., -1., -1.]},
+    CubeVertex{pos: [1., 1., -1.]},
+    CubeVertex{pos: [-1., 1., -1.]},
+];
+
+#[rustfmt::skip]
+pub const CUBE_INDICES: [u8; 36] = [
+    0, 2, 1,
+    0, 3, 2,
+    1, 6, 5,
+    1, 2, 6,
+    5, 7, 4,
+    5, 6, 7,
+    4, 3, 0,
+    4, 7, 3,
+    3, 7, 6,
+    3, 6, 2,
+    4, 0, 1,
+    4, 1, 5,
+];
 
 /// Attach a float buffer to a VAO
 pub fn attach_float_buf<T: bytemuck::Pod + bytemuck::Zeroable>(
@@ -137,6 +188,11 @@ extern "system" fn gl_debug_callback(
 ) {
     // Buffer creation on NVidia cards
     if id == 131185 {
+        return;
+    }
+
+    // Shader recompilation
+    if id == 131218 {
         return;
     }
 

@@ -1,112 +1,67 @@
-use crate::ogl::shader::Shader;
-//use egui_inspect::EguiInspect;
+use crate::ogl::shader::{
+    shader_permutations::{ShaderDefines, ShaderPermutations},
+    Shader,
+};
 use eyre::Result;
 
-//#[derive(EguiInspect)]
 pub struct Shaders {
-    /// Shader for meshes containing texture data
-    //#[inspect(custom_func_mut = "shader_inspect")]
-    pub pbr_normal_occlusion_emissive: Shader,
-    pub pbr_normal_occlusion: Shader,
-    pub pbr_normal_emissive: Shader,
-    pub pbr_normal: Shader,
-    pub pbr_occlusion_emissive: Shader,
-    pub pbr_occlusion: Shader,
-    pub pbr_emissive: Shader,
-    pub pbr: Shader,
-
-    /// Shader for sphere demonstration
-    //#[inspect(custom_func_mut = "shader_inspect")]
-    pub sphere_shader: Shader,
-    /// Shader for drawing lights
-    //#[inspect(custom_func_mut = "shader_inspect")]
+    pub pbr: ShaderPermutations,
     pub light_shader: Shader,
-
     pub cubemap_shader: Shader,
+}
+
+pub enum PbrDefine {
+    Albedo(bool),
+    Mr(bool),
+    Normal(bool),
+    Occlusion(bool),
+    Emissive(bool),
+}
+
+impl AsRef<str> for PbrDefine {
+    fn as_ref(&self) -> &str {
+        match self {
+            PbrDefine::Albedo(_) => "ALBEDO_MAP",
+            PbrDefine::Mr(_) => "MR_MAP",
+            PbrDefine::Normal(_) => "NORMAL_MAP",
+            PbrDefine::Occlusion(_) => "OCCLUSION_MAP",
+            PbrDefine::Emissive(_) => "EMISSIVE_MAP",
+        }
+    }
+}
+
+impl ShaderDefines for PbrDefine {
+    fn is_active(&self) -> bool {
+        match self {
+            PbrDefine::Albedo(active) => *active,
+            PbrDefine::Mr(active) => *active,
+            PbrDefine::Normal(active) => *active,
+            PbrDefine::Occlusion(active) => *active,
+            PbrDefine::Emissive(active) => *active,
+        }
+    }
+
+    fn rank(&self) -> u32 {
+        match self {
+            PbrDefine::Albedo(_) => 0,
+            PbrDefine::Mr(_) => 1,
+            PbrDefine::Normal(_) => 2,
+            PbrDefine::Occlusion(_) => 3,
+            PbrDefine::Emissive(_) => 4,
+        }
+    }
 }
 
 impl Shaders {
     pub fn new() -> Result<Self> {
-        let pbr_normal_occlusion_emissive = Shader::with_files_defines(
-            "shaders/basic.vert",
-            &[],
-            "shaders/pbr.frag",
-            &["NORMAL_MAP", "OCCLUSION_MAP", "EMISSIVE_MAP"],
-        )?;
-
-        let pbr_normal_occlusion = Shader::with_files_defines(
-            "shaders/basic.vert",
-            &[],
-            "shaders/pbr.frag",
-            &["NORMAL_MAP", "OCCLUSION_MAP"],
-        )?;
-
-        let pbr_normal_emissive = Shader::with_files_defines(
-            "shaders/basic.vert",
-            &[],
-            "shaders/pbr.frag",
-            &["NORMAL_MAP", "EMISSIVE_MAP"],
-        )?;
-
-        let pbr_normal = Shader::with_files_defines(
-            "shaders/basic.vert",
-            &[],
-            "shaders/pbr.frag",
-            &["NORMAL_MAP"],
-        )?;
-
-        let pbr_occlusion_emissive = Shader::with_files_defines(
-            "shaders/basic.vert",
-            &[],
-            "shaders/pbr.frag",
-            &["OCCLUSION_MAP", "EMISSIVE_MAP"],
-        )?;
-
-        let pbr_occlusion = Shader::with_files_defines(
-            "shaders/basic.vert",
-            &[],
-            "shaders/pbr.frag",
-            &["OCCLUSION_MAP"],
-        )?;
-
-        let pbr_emissive = Shader::with_files_defines(
-            "shaders/basic.vert",
-            &[],
-            "shaders/pbr.frag",
-            &["EMISSIVE_MAP"],
-        )?;
-
-        let pbr = Shader::with_files_defines("shaders/basic.vert", &[], "shaders/pbr.frag", &[])?;
-
-        let sphere_shader = Shader::with_files("shaders/basic.vert", "shaders/sphere.frag")?;
-
+        let pbr = ShaderPermutations::new(5, "shaders/basic.vert", "shaders/pbr.frag")?;
         let light_shader = Shader::with_files("shaders/basic.vert", "shaders/light.frag")?;
-
         let cubemap_shader = Shader::with_files("shaders/cubemap.vert", "shaders/cubemap.frag")?;
 
         Ok(Self {
-            pbr_normal_occlusion_emissive,
-            sphere_shader,
-            light_shader,
-            pbr_normal_occlusion,
-            pbr_normal_emissive,
-            pbr_normal,
-            pbr_occlusion_emissive,
-            pbr_occlusion,
-            pbr_emissive,
             pbr,
+            light_shader,
             cubemap_shader,
         })
     }
 }
-
-/* fn shader_inspect(shader: &mut Shader, label: &'static str, ui: &mut egui::Ui) {
-    if ui.button("Reload").clicked() {
-        if let Ok(new_shader) = shader.reload() {
-            *shader = new_shader;
-        }
-    }
-
-    shader.inspect(label, ui);
-}
- */

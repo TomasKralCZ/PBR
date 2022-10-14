@@ -24,8 +24,12 @@ layout (std140, binding = 5) uniform Lighting {
     uniform uint lights;
 };
 
+#ifdef ALBEDO_MAP
 layout(binding = 0) uniform sampler2D abledoTex;
+#endif
+#ifdef MR_MAP
 layout(binding = 1) uniform sampler2D mrTex;
+#endif
 #ifdef NORMAL_MAP
 layout(binding = 2) uniform sampler2D normalTex;
 #endif
@@ -37,6 +41,8 @@ layout(binding = 4) uniform sampler2D emissiveTex;
 #endif
 
 layout(binding = 5) uniform samplerCube irradiance_map;
+layout(binding = 6) uniform samplerCube prefilter_map;
+layout(binding = 7) uniform sampler2D brdf_lut;
 
 out vec4 FragColor;
 
@@ -76,24 +82,27 @@ float normalDistribution(vec3 normal, vec3 halfway, float roughness) {
     return (asq) / (PI * denom * denom);
 }
 
-// Schlick-Beckmann in UE4 (http://graphicrants.blogspot.com/2013/08/specular-brdf-reference.html)
-float geometrySchlick(float dotProd, float roughness) {
-    float r = (roughness + 1.);
-    float k = (r * r) / 8.;
-
-    return dotProd / (dotProd * (1. - k) + k);
-}
-
 vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+float geometry_ggx(float ndv, float roughness) {
+    float a = roughness * roughness;
+    float asq = a * a;
+
+    float denom =
+        ndv + sqrt(asq + ((1 - asq) * (ndv * ndv)));
+
+    return (2 * ndv) / denom;
 }
 
 // Smith
 float geometryShadowing(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness) {
     float nv = max(dot(normal, viewDir), 0.0);
     float nl = max(dot(normal, lightDir), 0.0);
-    float ggx2 = geometrySchlick(nv, roughness);
-    float ggx1 = geometrySchlick(nl, roughness);
+
+    float ggx2 = geometry_ggx(nv, roughness);
+    float ggx1 = geometry_ggx(nl, roughness);
 
     return ggx1 * ggx2;
 }
@@ -101,12 +110,19 @@ float geometryShadowing(vec3 normal, vec3 viewDir, vec3 lightDir, float roughnes
 void main() {
     float gamma = 2.2;
 
-    vec4 albedo = texture(abledoTex, vsOut.texCoords);
-    albedo.rgb = pow(albedo.rgb, vec3(gamma));
-    albedo *= base_color_factor;
+    vec4 albedo = base_color_factor;
+#ifdef ALBEDO_MAP
+    albedo *= texture(abledoTex, vsOut.texCoords);
+#endif
 
-    float roughness = texture(mrTex, vsOut.texCoords).g * roughness_factor;
-    float metalness = texture(mrTex, vsOut.texCoords).b * metallic_factor;
+    albedo.rgb = pow(albedo.rgb, vec3(gamma));
+
+    float roughness = roughness_factor;
+    float metalness = metallic_factor;
+#ifdef MR_MAP
+    roughness *= texture(mrTex, vsOut.texCoords).g;
+    metalness *= texture(mrTex, vsOut.texCoords).b;
+#endif
 
     vec3 f0 = vec3(0.04);
     f0 = mix(f0, albedo.rgb, metalness);
@@ -128,8 +144,9 @@ void main() {
         vec3 radiance = lightColors[i].xyz;
 
         // Cook-Torrance BRDF
-        float normalDistribution = normalDistribution(normal, halfway, roughness);
-        float geometry = geometryShadowing(normal, viewDir, lightDir, roughness);
+        // + 0.0001 to prevent divide by zero
+        float normalDistribution = normalDistribution(normal, halfway, roughness + 0.0001);
+        float geometry = geometryShadowing(normal, viewDir, lightDir, roughness + 0.0001);
         vec3 fresnel = fresnelSchlick(f0, cosTheta);
 
         vec3 numerator = normalDistribution * geometry * fresnel;
@@ -146,13 +163,23 @@ void main() {
         totalRadiance += ((kD * albedo.rgb / PI) + specular) * radiance * nl;
     }
 
-    vec3 ambient = albedo.rgb * 0.05;
-    /* // ambient
-    vec3 kS = fresnelSchlickRoughness(max(dot(normal, viewDir), 0.0), f0, roughness_factor);
+    // environment lighting
+    vec3 F = fresnelSchlickRoughness(max(dot(normal, viewDir), 0.0), f0, roughness);
+    vec3 kS = F;
     vec3 kD = 1.0 - kS;
+    kD *= 1.0 - metalness;
+
     vec3 irradiance = texture(irradiance_map, normal).rgb;
-    vec3 diffuse    = irradiance * base_color_factor.rgb;
-    vec3 ambient    = (kD * diffuse); */
+    vec3 diffuse = irradiance * albedo.rgb;
+
+    vec3 R = reflect(-viewDir, normal);
+
+    const float MAX_REFLECTION_LOD = 6.0;
+    vec3 prefiltered_color = textureLod(prefilter_map, R, roughness * MAX_REFLECTION_LOD).rgb;
+    vec2 env_brdf = texture(brdf_lut, vec2(max(dot(normal, viewDir), 0.0), roughness)).rg;
+    vec3 specular = prefiltered_color * (F * env_brdf.x + env_brdf.y);
+
+    vec3 ambient = (kD * diffuse + specular);
 
 #ifdef OCCLUSION_MAP
     ambient *= texture(occlusionTex, vsOut.texCoords).x * occlusion_strength;
@@ -161,7 +188,7 @@ void main() {
     vec3 color = ambient.rgb + totalRadiance;
 
 #ifdef EMISSIVE_MAP
-    vec4 emissive = texture(emissiveTex, vsOut.texCoords) * 0.2;
+    vec4 emissive = texture(emissiveTex, vsOut.texCoords);
     emissive.rgb = pow(emissive.rgb, vec3(gamma));
     color += emissive.rgb * emissive_factor.xyz;
 #endif

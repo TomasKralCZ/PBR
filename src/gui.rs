@@ -1,4 +1,4 @@
-use egui::{color::Hsva, CtxRef, RichText, Ui};
+use egui::{CtxRef, RichText, Ui};
 
 use crate::{
     camera::{Camera, CameraTyp},

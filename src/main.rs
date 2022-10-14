@@ -42,6 +42,7 @@ mod util;
 fn main() -> Result<()> {
     let mut window = AppWindow::new("PBR experiments - Tomáš Král")?;
 
+    gl::load_with(|name| window.window.subsystem().gl_get_proc_address(name) as _);
     ogl::init_debug();
 
     let mut appstate = AppState::new(&window);

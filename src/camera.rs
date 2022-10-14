@@ -60,6 +60,7 @@ impl Flycam {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_pos(&mut self, pos: Vec3) {
         self.pos = pos;
         self.changed = true;
@@ -156,8 +157,6 @@ pub struct Orbitalcam {
     /// Distance from the origin
     dist: f32,
     pos: Vec3,
-    dir: Vec3,
-    up: Vec3,
     sensitivity: f32,
     /// Last x position of the mouse
     current_x: f32,
@@ -175,8 +174,6 @@ impl Orbitalcam {
             dist,
             sensitivity,
             pos,
-            dir: Vec3::ZERO - pos,
-            up: vec3(0., 1., 0.),
             current_x: window_width as f32 / 2.,
             current_y: window_height as f32 / 2.,
             azimuth: 180.,

@@ -1,3 +1,6 @@
+use std::mem::size_of;
+
+use bytemuck::offset_of;
 use eyre::Result;
 use glam::{Mat4, Vec3};
 
@@ -9,7 +12,7 @@ use crate::{
     ogl::{self, uniform_buffer::UniformBuffer},
 };
 
-mod hdri;
+mod ibl;
 mod lighting;
 pub mod material;
 mod shaders;
@@ -17,7 +20,11 @@ mod transforms;
 
 pub use material::Material;
 
-use self::{lighting::Lighting, shaders::Shaders, transforms::Transforms};
+use self::{
+    lighting::Lighting,
+    shaders::{PbrDefine, Shaders},
+    transforms::Transforms,
+};
 
 /// A component responsible for rendering the scene.
 pub struct Renderer {
@@ -32,14 +39,18 @@ pub struct Renderer {
     cube_vao: u32,
     cubemap_tex_id: u32,
     irradiance_map_id: u32,
+    prefilter_map_id: u32,
+    brdf_lut_id: u32,
 }
 
 impl Renderer {
     /// Create a new renderer
     pub fn new() -> Result<Self> {
         let cube_vao = Self::init_cube();
+        let quad_vao = Self::init_quad();
 
-        let (cubemap_tex_id, irradiance_map_id) = hdri::load_cubemaps(cube_vao)?;
+        let (cubemap_tex_id, irradiance_map_id, prefilter_map_id, brdf_lut_id) =
+            ibl::load_cubemaps(cube_vao, quad_vao)?;
 
         Ok(Self {
             shaders: Shaders::new()?,
@@ -50,6 +61,8 @@ impl Renderer {
             cube_vao,
             cubemap_tex_id,
             irradiance_map_id,
+            prefilter_map_id,
+            brdf_lut_id,
         })
     }
 
@@ -61,7 +74,7 @@ impl Renderer {
             f32::to_radians(60.),
             appstate.render_viewport_dim.width / appstate.render_viewport_dim.height,
             0.1,
-            100.,
+            1000.,
         );
 
         self.transforms.inner.projection = persp;
@@ -101,6 +114,7 @@ impl Renderer {
             );
             gl::ClearColor(0.15, 0.15, 0.15, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+            gl::Enable(gl::TEXTURE_CUBE_MAP_SEAMLESS);
         }
     }
 
@@ -122,64 +136,51 @@ impl Renderer {
         self.transforms.inner.model = node_transform;
         self.transforms.update();
 
-        for prim in &mesh.primitives {
+        for primitive in &mesh.primitives {
             unsafe {
-                let set_texture = |id: Option<u32>, port: u32| {
+                let bind_texture_unit = |id: Option<u32>, port: u32| {
                     if let Some(tex_id) = id {
                         gl::BindTextureUnit(port, tex_id);
                     }
                 };
 
-                set_texture(prim.base_color_texture, ogl::ALBEDO_PORT);
-                set_texture(prim.mr_texture, ogl::MR_PORT);
-                set_texture(prim.normal_texture, ogl::NORMAL_PORT);
-                set_texture(prim.occlusion_texture, ogl::OCCLUSION_PORT);
-                set_texture(prim.emissive_texture, ogl::EMISSIVE_PORT);
+                bind_texture_unit(primitive.base_color_texture, ogl::ALBEDO_PORT);
+                bind_texture_unit(primitive.mr_texture, ogl::MR_PORT);
+                bind_texture_unit(primitive.normal_texture, ogl::NORMAL_PORT);
+                bind_texture_unit(primitive.occlusion_texture, ogl::OCCLUSION_PORT);
+                bind_texture_unit(primitive.emissive_texture, ogl::EMISSIVE_PORT);
+
+                gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.irradiance_map_id);
+                gl::BindTextureUnit(ogl::PREFILTER_PORT, self.prefilter_map_id);
+                gl::BindTextureUnit(ogl::BRDF_PORT, self.brdf_lut_id);
 
                 gl::ActiveTexture(gl::TEXTURE0 + ogl::IRRADIANCE_PORT);
                 gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.irradiance_map_id);
 
-                self.set_material(prim, appstate);
+                self.set_material(primitive, appstate);
 
-                let shader = match (
-                    prim.base_color_texture,
-                    prim.mr_texture,
-                    prim.normal_texture,
-                    prim.occlusion_texture,
-                    prim.emissive_texture,
-                ) {
-                    (None, None, None, None, None) => &self.shaders.sphere_shader,
-                    (Some(_), Some(_), None, None, None) => &self.shaders.pbr,
-                    (Some(_), Some(_), None, None, Some(_)) => &self.shaders.pbr_emissive,
-                    (Some(_), Some(_), None, Some(_), None) => &self.shaders.pbr_occlusion,
-                    (Some(_), Some(_), None, Some(_), Some(_)) => {
-                        &self.shaders.pbr_occlusion_emissive
-                    }
-                    (Some(_), Some(_), Some(_), None, None) => &self.shaders.pbr_normal,
-                    (Some(_), Some(_), Some(_), None, Some(_)) => &self.shaders.pbr_normal_emissive,
-                    (Some(_), Some(_), Some(_), Some(_), None) => {
-                        &self.shaders.pbr_normal_occlusion
-                    }
-                    (Some(_), Some(_), Some(_), Some(_), Some(_)) => {
-                        &self.shaders.pbr_normal_occlusion_emissive
-                    }
-                    _ => panic!(
-                        "Missing a basic texture: {:?}",
-                        (
-                            prim.base_color_texture,
-                            prim.mr_texture,
-                            prim.normal_texture,
-                            prim.occlusion_texture,
-                            prim.emissive_texture
-                        )
-                    ),
-                };
+                let defines = Self::prim_pbr_defines(primitive);
+                let shader = self
+                    .shaders
+                    .pbr
+                    .get_shader(&defines)
+                    .expect("Error getting a shader");
 
                 shader.draw_with(|| {
-                    Self::draw_mesh(prim);
+                    Self::draw_mesh(primitive);
                 })
             }
         }
+    }
+
+    fn prim_pbr_defines(prim: &Primitive) -> [PbrDefine; 5] {
+        [
+            PbrDefine::Albedo(prim.base_color_texture.is_some()),
+            PbrDefine::Mr(prim.mr_texture.is_some()),
+            PbrDefine::Normal(prim.normal_texture.is_some()),
+            PbrDefine::Occlusion(prim.occlusion_texture.is_some()),
+            PbrDefine::Emissive(prim.emissive_texture.is_some()),
+        ]
     }
 
     fn set_material(&mut self, prim: &Primitive, appstate: &AppState) {
@@ -243,45 +244,18 @@ impl Renderer {
     }
 
     fn init_cube() -> u32 {
-        let vertices: [CubeVertex; 8] = [
-            CubeVertex::new([-1., -1., 1.]),
-            CubeVertex::new([1., -1., 1.]),
-            CubeVertex::new([1., 1., 1.]),
-            CubeVertex::new([-1., 1., 1.]),
-            CubeVertex::new([-1., -1., -1.]),
-            CubeVertex::new([1., -1., -1.]),
-            CubeVertex::new([1., 1., -1.]),
-            CubeVertex::new([-1., 1., -1.]),
-        ];
-
-        #[rustfmt::skip]
-        let indices: [u8; 36] = [
-            0, 2, 1,
-            0, 3, 2,
-            1, 6, 5,
-            1, 2, 6,
-            5, 7, 4,
-            5, 6, 7,
-            4, 3, 0,
-            4, 7, 3,
-            3, 7, 6,
-            3, 6, 2,
-            4, 0, 1,
-            4, 1, 5,
-        ];
-
         let mut vao = 0;
         let mut ibo = 0;
 
         unsafe {
             gl::CreateVertexArrays(1, &mut vao);
-            ogl::attach_float_buf(vao, &vertices, 3, ogl::POSITION_INDEX, gl::FLOAT);
+            ogl::attach_float_buf(vao, &ogl::CUBE_VERTICES, 3, ogl::POSITION_INDEX, gl::FLOAT);
 
             gl::CreateBuffers(1, &mut ibo);
             gl::NamedBufferData(
                 ibo,
-                indices.len() as isize,
-                indices.as_ptr() as _,
+                ogl::CUBE_INDICES.len() as isize,
+                ogl::CUBE_INDICES.as_ptr() as _,
                 gl::STATIC_DRAW,
             );
             gl::VertexArrayElementBuffer(vao, ibo);
@@ -297,16 +271,34 @@ impl Renderer {
             gl::BindVertexArray(0);
         }
     }
-}
 
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct CubeVertex {
-    pos: [f32; 3],
-}
+    fn init_quad() -> u32 {
+        let mut vao = 0;
 
-impl CubeVertex {
-    fn new(pos: [f32; 3]) -> Self {
-        Self { pos }
+        unsafe {
+            gl::CreateVertexArrays(1, &mut vao);
+            ogl::attach_float_buf_multiple_attribs(
+                vao,
+                &ogl::QUAD_VERTICES,
+                &[3, 2],
+                &[0, 1],
+                &[gl::FLOAT, gl::FLOAT],
+                size_of::<ogl::QuadVertex>(),
+                &[
+                    offset_of!(ogl::QuadVertex, pos),
+                    offset_of!(ogl::QuadVertex, texcoords),
+                ],
+            );
+        }
+
+        vao
+    }
+
+    fn draw_quad(quad_vao: u32) {
+        unsafe {
+            gl::BindVertexArray(quad_vao);
+            gl::DrawArrays(gl::TRIANGLE_STRIP, 0, ogl::QUAD_VERTICES.len() as i32);
+            gl::BindVertexArray(0);
+        }
     }
 }
