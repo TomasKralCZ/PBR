@@ -8,6 +8,8 @@ mod mesh;
 
 pub use self::mesh::{Mesh, Primitive};
 
+pub type GlTextureId = u32;
+
 /// Image and vertex data of the asset.
 pub struct DataBundle {
     /// Vertex data
@@ -15,7 +17,7 @@ pub struct DataBundle {
     /// Texture data
     images: Vec<gltf::image::Data>,
     /// To keep track if which textures were already sent to the GPU
-    pub gl_textures: Vec<Option<u32>>,
+    pub gl_textures: Vec<Option<GlTextureId>>,
 }
 
 impl DataBundle {

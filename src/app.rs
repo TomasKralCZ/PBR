@@ -1,11 +1,11 @@
-use crate::{camera::CameraTyp, gui::RenderViewportDim, renderer::Material, window::AppWindow};
+use crate::{camera::CameraTyp, gui::RenderViewportDim, renderer::PbrMaterial, window::AppWindow};
 
 pub struct AppState {
     pub camera_typ: CameraTyp,
     pub selected_model: Option<usize>,
     pub render_viewport_dim: RenderViewportDim,
     pub should_override_material: bool,
-    pub pbr_material_override: Material,
+    pub pbr_material_override: PbrMaterial,
 }
 
 impl AppState {
@@ -15,7 +15,7 @@ impl AppState {
             selected_model: None,
             render_viewport_dim: RenderViewportDim::new(window),
             should_override_material: false,
-            pbr_material_override: Material::new(),
+            pbr_material_override: PbrMaterial::new(),
         }
     }
 }

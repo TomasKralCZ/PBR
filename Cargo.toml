@@ -9,11 +9,15 @@ bytemuck = { version = "1.9.1", features = ["derive"] }
 eyre = "0.6.7"
 # Latest version only has OpenGl 4.5
 gl = { git = "https://github.com/brendanzab/gl-rs" }
-gltf = "1.0.0"
+gltf = { version = "1.0.0", features = ["KHR_materials_ior", "KHR_materials_clearcoat"]}
 egui_sdl2_gl = "0.16.0"
 egui = "0.16"
 sdl2 = "0.35"
 image = { version = "0.24.2", features = ["png", "jpeg", "hdr"] }
+
+# For clearcoat extension
+[patch.crates-io]
+gltf = { path = "../gltf"}
 
 [profile.dev.package."*"]
 opt-level = 3

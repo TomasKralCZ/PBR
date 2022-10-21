@@ -1,6 +1,6 @@
-use glam::{Vec4, vec4};
+use glam::Vec4;
 
-use crate::ogl::uniform_buffer::UniformBufferElement;
+use crate::ogl::{uniform_buffer::UniformBufferElement, self};
 
 /// Uniform buffer element that stores the lighing data
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Copy, Clone)]
@@ -24,7 +24,7 @@ impl Lighting {
             Vec4::ZERO,
         ];
 
-        let light_color = [vec4(0.5, 0.2, 0.9, 1.0), Vec4::ONE, Vec4::ONE, Vec4::ONE];
+        let light_color = [Vec4::ONE, Vec4::ONE, Vec4::ONE, Vec4::ONE];
 
         Self {
             cam_pos,
@@ -37,5 +37,5 @@ impl Lighting {
 }
 
 impl UniformBufferElement for Lighting {
-    const BINDING: u32 = 5;
+    const BINDING: u32 = ogl::LIGHTNING_BINDING;
 }

@@ -2,26 +2,25 @@
 
 //@DEFINES@
 
-in VsOut {
+in VsOut
+{
     vec2 texCoords;
     vec3 normal;
     vec3 fragPos;
-} vsOut;
+}
+vsOut;
 
-layout (std140, binding = 4) uniform Material {
+layout(std140, binding = 1) uniform PbrMaterial
+{
     uniform vec4 base_color_factor;
     uniform vec4 emissive_factor;
     uniform float metallic_factor;
     uniform float roughness_factor;
     uniform float normal_scale;
     uniform float occlusion_strength;
-};
 
-layout (std140, binding = 5) uniform Lighting {
-    uniform vec4 lightPositions[4];
-    uniform vec4 lightColors[4];
-    uniform vec4 camPos;
-    uniform uint lights;
+    uniform float clearcoatIntensityFactor;
+    uniform float clearcoatRoughnessFactor;
 };
 
 #ifdef ALBEDO_MAP
@@ -40,13 +39,29 @@ layout(binding = 3) uniform sampler2D occlusionTex;
 layout(binding = 4) uniform sampler2D emissiveTex;
 #endif
 
-layout(binding = 5) uniform samplerCube irradiance_map;
-layout(binding = 6) uniform samplerCube prefilter_map;
-layout(binding = 7) uniform sampler2D brdf_lut;
+#ifdef CLEARCOAT_INTENSITY_MAP
+layout(binding = 5) uniform sampler2D clearcoatIntensityTex;
+#endif
+#ifdef CLEARCOAT_ROUGHNESS_MAP
+layout(binding = 6) uniform sampler2D clearcoatRoughnessTex;
+#endif
+
+layout(std140, binding = 2) uniform Lighting
+{
+    uniform vec4 lightPositions[4];
+    uniform vec4 lightColors[4];
+    uniform vec4 camPos;
+    uniform uint lights;
+};
+
+layout(binding = 7) uniform samplerCube irradiance_map;
+layout(binding = 8) uniform samplerCube prefilter_map;
+layout(binding = 9) uniform sampler2D brdf_lut;
 
 out vec4 FragColor;
 
 const float PI = 3.14159265359;
+const float ROUGHNESS_MIN = 0.0001;
 
 #ifdef NORMAL_MAP
 vec3 getNormalFromMap()
@@ -67,12 +82,19 @@ vec3 getNormalFromMap()
 }
 #endif
 
-vec3 fresnelSchlick(vec3 f0, float cosTheta) {
+vec3 fresnelSchlick(vec3 f0, float cosTheta)
+{
+    return f0 + (1. - f0) * pow(clamp(1. - cosTheta, 0.0, 1.0), 5.);
+}
+
+float fresnelSchlick(float f0, float cosTheta)
+{
     return f0 + (1. - f0) * pow(clamp(1. - cosTheta, 0.0, 1.0), 5.);
 }
 
 // GGX / Trowbridge-Reitz
-float normalDistribution(vec3 normal, vec3 halfway, float roughness) {
+float normalDistribution(vec3 normal, vec3 halfway, float roughness)
+{
     float a = roughness * roughness;
     float asq = a * a;
 
@@ -82,22 +104,25 @@ float normalDistribution(vec3 normal, vec3 halfway, float roughness) {
     return (asq) / (PI * denom * denom);
 }
 
-vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
+{
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
-float geometry_ggx(float ndv, float roughness) {
+float geometry_ggx(float ndv, float roughness)
+{
     float a = roughness * roughness;
     float asq = a * a;
 
-    float denom =
-        ndv + sqrt(asq + ((1 - asq) * (ndv * ndv)));
+    float denom = ndv + sqrt(asq + ((1 - asq) * (ndv * ndv)));
 
     return (2 * ndv) / denom;
 }
 
 // Smith
-float geometryShadowing(vec3 normal, vec3 viewDir, vec3 lightDir, float roughness) {
+float geometryShadowing(vec3 normal, vec3 viewDir, vec3 lightDir,
+    float roughness)
+{
     float nv = max(dot(normal, viewDir), 0.0);
     float nl = max(dot(normal, lightDir), 0.0);
 
@@ -107,7 +132,42 @@ float geometryShadowing(vec3 normal, vec3 viewDir, vec3 lightDir, float roughnes
     return ggx1 * ggx2;
 }
 
-void main() {
+#ifdef CLEARCOAT
+vec3 clearcoatBrdf(out float clearcoatFresnel, vec3 normal, vec3 halfway,
+    vec3 viewDir, vec3 lightDir, float cosTheta)
+{
+    float clearcoatRoughness = clearcoatIntensityFactor;
+
+#ifdef CLEARCOAT_ROUGHNESS_MAP
+    clearcoatRoughness *= texture(clearcoatRoughnessTex, vsOut.texCoords).x;
+#endif
+
+    clearcoatRoughness = clearcoatIntensityFactor * clearcoatRoughnessFactor;
+    clearcoatRoughness = clamp(clearcoatRoughness, ROUGHNESS_MIN, 1.0);
+
+    float clearcoatIntensity = clearcoatIntensityFactor;
+
+#ifdef CLEARCOAT_INTENSITY_MAP
+    clearcoatIntensity *= texture(clearcoatIntensityTex, vsOut.texCoords).x;
+#endif
+
+    // clearcoat BRDF
+    float clearcoatDistribution = normalDistribution(normal, halfway, clearcoatRoughness);
+    float clearcoatGeometry = geometryShadowing(normal, viewDir, lightDir, clearcoatRoughness);
+    // Coating IOR is 1.5 (f0 == 0.04) - equivalent to polyurethane
+    clearcoatFresnel = fresnelSchlick(0.04, cosTheta) * clearcoatIntensity;
+
+    vec3 numerator = clearcoatDistribution * clearcoatGeometry * vec3(clearcoatFresnel);
+    float denominator = 4.0 * max(dot(viewDir, normal), 0.0) * max(dot(lightDir, normal), 0.0);
+    // + 0.0001 to prevent divide by zero
+    vec3 specular = numerator / (denominator + 0.0001);
+
+    return specular;
+}
+#endif
+
+void main()
+{
     float gamma = 2.2;
 
     vec4 albedo = base_color_factor;
@@ -123,6 +183,8 @@ void main() {
     roughness *= texture(mrTex, vsOut.texCoords).g;
     metalness *= texture(mrTex, vsOut.texCoords).b;
 #endif
+
+    roughness = clamp(roughness, ROUGHNESS_MIN, 1.0);
 
     vec3 f0 = vec3(0.04);
     f0 = mix(f0, albedo.rgb, metalness);
@@ -140,27 +202,38 @@ void main() {
         vec3 halfway = normalize(viewDir + lightDir);
         float cosTheta = max(dot(halfway, viewDir), 0.);
 
-        // Should add attenuation...
+        // TODO: should add attenuation...
         vec3 radiance = lightColors[i].xyz;
 
         // Cook-Torrance BRDF
-        // + 0.0001 to prevent divide by zero
-        float normalDistribution = normalDistribution(normal, halfway, roughness + 0.0001);
-        float geometry = geometryShadowing(normal, viewDir, lightDir, roughness + 0.0001);
+        float normalDistribution = normalDistribution(normal, halfway, roughness);
+        float geometry = geometryShadowing(normal, viewDir, lightDir, roughness);
         vec3 fresnel = fresnelSchlick(f0, cosTheta);
+
+#ifdef CLEARCOAT
+        float clearcoatFresnel;
+        vec3 clearcoatColor = clearcoatBrdf(clearcoatFresnel, normal, halfway, viewDir, lightDir, cosTheta);
+#endif
 
         vec3 numerator = normalDistribution * geometry * fresnel;
         float denominator = 4.0 * max(dot(viewDir, normal), 0.0) * max(dot(lightDir, normal), 0.0);
         // + 0.0001 to prevent divide by zero
         vec3 specular = numerator / (denominator + 0.0001);
 
-        vec3 kS = fresnel;
-        vec3 kD = vec3(1.0) - kS;
+        vec3 kD = vec3(1.0) - fresnel;
         kD *= 1.0 - metalness;
 
+        vec3 diffuse = kD * albedo.rgb / PI;
         float nl = max(dot(normal, lightDir), 0.0);
 
-        totalRadiance += ((kD * albedo.rgb / PI) + specular) * radiance * nl;
+#ifdef CLEARCOAT
+        // Energy loss due to the clearcoat layer is given by 1 - clearcoatFresnel
+        vec3 brdf = (diffuse + specular) * (1. - clearcoatFresnel) + clearcoatColor;
+#else
+        vec3 brdf = diffuse + specular;
+#endif
+
+        totalRadiance += brdf * radiance * nl;
     }
 
     // environment lighting
@@ -185,7 +258,7 @@ void main() {
     ambient *= texture(occlusionTex, vsOut.texCoords).x * occlusion_strength;
 #endif
 
-    vec3 color = ambient.rgb + totalRadiance;
+    vec3 color = ambient + totalRadiance;
 
 #ifdef EMISSIVE_MAP
     vec4 emissive = texture(emissiveTex, vsOut.texCoords);

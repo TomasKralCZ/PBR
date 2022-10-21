@@ -18,7 +18,7 @@ pub struct ShaderPermutations {
 }
 
 impl ShaderPermutations {
-    pub fn new(num_defines: u32, vs_path: &str, fs_path: &str) -> Result<Self> {
+    pub fn new<T: ShaderDefines>(vs_path: &str, fs_path: &str) -> Result<Self> {
         let mut vs_src =
             String::from_utf8(fs::read(vs_path).wrap_err("Couldn't load the vertex shader file")?)?;
         let mut fs_src = String::from_utf8(
@@ -29,7 +29,7 @@ impl ShaderPermutations {
         fs_src.push('\0');
 
         Ok(Self {
-            permutations: vec![None; 2usize.pow(num_defines)],
+            permutations: vec![None; 2usize.pow(T::NUM_DEFINES)],
             vs_src,
             fs_src,
         })
@@ -67,6 +67,8 @@ impl ShaderPermutations {
 }
 
 pub trait ShaderDefines: AsRef<str> {
+    const NUM_DEFINES: u32;
+
     fn is_active(&self) -> bool;
     fn rank(&self) -> u32;
 }

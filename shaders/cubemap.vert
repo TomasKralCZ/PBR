@@ -1,10 +1,8 @@
 #version 460 core
-layout (location = 0) in vec3 aPos;
+layout(location = 0) in vec3 aPos;
 
-//uniform mat4 projection;
-//uniform mat4 view;
-
-layout (std140, binding = 1) uniform Transforms {
+layout(std140, binding = 0) uniform Transforms
+{
     mat4 projection;
     mat4 view;
     mat4 model;

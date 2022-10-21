@@ -9,7 +9,7 @@ use crate::{
     camera::Camera,
     gui::RenderViewportDim,
     model::{Mesh, Model, Node, Primitive},
-    ogl::{self, uniform_buffer::UniformBuffer},
+    ogl::{self, shader::shader_permutations::ShaderDefines, uniform_buffer::UniformBuffer},
 };
 
 mod ibl;
@@ -18,7 +18,7 @@ pub mod material;
 mod shaders;
 mod transforms;
 
-pub use material::Material;
+pub use material::PbrMaterial;
 
 use self::{
     lighting::Lighting,
@@ -32,7 +32,7 @@ pub struct Renderer {
     /// Current MVP transformation matrices
     transforms: UniformBuffer<Transforms>,
     /// Current mesh material
-    pub material: UniformBuffer<Material>,
+    pub material: UniformBuffer<PbrMaterial>,
     /// Current lighting settings
     lighting: UniformBuffer<Lighting>,
     sphere: Model,
@@ -55,7 +55,7 @@ impl Renderer {
         Ok(Self {
             shaders: Shaders::new()?,
             transforms: UniformBuffer::new(Transforms::new_indentity()),
-            material: UniformBuffer::new(Material::new()),
+            material: UniformBuffer::new(PbrMaterial::new()),
             lighting: UniformBuffer::new(Lighting::new()),
             sphere: Model::from_gltf("resources/Sphere.glb")?,
             cube_vao,
@@ -137,49 +137,82 @@ impl Renderer {
         self.transforms.update();
 
         for primitive in &mesh.primitives {
-            unsafe {
-                let bind_texture_unit = |id: Option<u32>, port: u32| {
-                    if let Some(tex_id) = id {
-                        gl::BindTextureUnit(port, tex_id);
-                    }
-                };
+            self.bind_textures(primitive);
+            self.set_material(primitive, appstate);
 
-                bind_texture_unit(primitive.base_color_texture, ogl::ALBEDO_PORT);
-                bind_texture_unit(primitive.mr_texture, ogl::MR_PORT);
-                bind_texture_unit(primitive.normal_texture, ogl::NORMAL_PORT);
-                bind_texture_unit(primitive.occlusion_texture, ogl::OCCLUSION_PORT);
-                bind_texture_unit(primitive.emissive_texture, ogl::EMISSIVE_PORT);
+            let defines = Self::prim_pbr_defines(primitive);
+            let shader = self
+                .shaders
+                .pbr
+                .get_shader(&defines)
+                .expect("Error getting a shader");
 
-                gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.irradiance_map_id);
-                gl::BindTextureUnit(ogl::PREFILTER_PORT, self.prefilter_map_id);
-                gl::BindTextureUnit(ogl::BRDF_PORT, self.brdf_lut_id);
-
-                gl::ActiveTexture(gl::TEXTURE0 + ogl::IRRADIANCE_PORT);
-                gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.irradiance_map_id);
-
-                self.set_material(primitive, appstate);
-
-                let defines = Self::prim_pbr_defines(primitive);
-                let shader = self
-                    .shaders
-                    .pbr
-                    .get_shader(&defines)
-                    .expect("Error getting a shader");
-
-                shader.draw_with(|| {
-                    Self::draw_mesh(primitive);
-                })
-            }
+            shader.draw_with(|| {
+                Self::draw_mesh(primitive);
+            })
         }
     }
 
-    fn prim_pbr_defines(prim: &Primitive) -> [PbrDefine; 5] {
+    fn bind_textures(&mut self, primitive: &Primitive) {
+        let bind_texture_unit = |id: Option<u32>, port: u32| {
+            if let Some(tex_id) = id {
+                unsafe {
+                    gl::BindTextureUnit(port, tex_id);
+                }
+            }
+        };
+
+        bind_texture_unit(primitive.pbr_material.base_color_texture, ogl::ALBEDO_PORT);
+        bind_texture_unit(primitive.pbr_material.mr_texture, ogl::MR_PORT);
+        bind_texture_unit(primitive.pbr_material.normal_texture, ogl::NORMAL_PORT);
+        bind_texture_unit(
+            primitive.pbr_material.occlusion_texture,
+            ogl::OCCLUSION_PORT,
+        );
+        bind_texture_unit(primitive.pbr_material.emissive_texture, ogl::EMISSIVE_PORT);
+
+        bind_texture_unit(
+            primitive
+                .clearcoat
+                .as_ref()
+                .and_then(|c| c.intensity_texture),
+            ogl::CLEARCOAT_INTENSITY_PORT,
+        );
+        bind_texture_unit(
+            primitive
+                .clearcoat
+                .as_ref()
+                .and_then(|c| c.roughness_texture),
+            ogl::CLEARCOAT_ROUGHNESS_PORT,
+        );
+
+        unsafe {
+            gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.irradiance_map_id);
+            gl::BindTextureUnit(ogl::PREFILTER_PORT, self.prefilter_map_id);
+            gl::BindTextureUnit(ogl::BRDF_PORT, self.brdf_lut_id);
+        }
+    }
+
+    fn prim_pbr_defines(prim: &Primitive) -> [PbrDefine; PbrDefine::NUM_DEFINES as usize] {
         [
-            PbrDefine::Albedo(prim.base_color_texture.is_some()),
-            PbrDefine::Mr(prim.mr_texture.is_some()),
-            PbrDefine::Normal(prim.normal_texture.is_some()),
-            PbrDefine::Occlusion(prim.occlusion_texture.is_some()),
-            PbrDefine::Emissive(prim.emissive_texture.is_some()),
+            PbrDefine::Albedo(prim.pbr_material.base_color_texture.is_some()),
+            PbrDefine::Mr(prim.pbr_material.mr_texture.is_some()),
+            PbrDefine::Normal(prim.pbr_material.normal_texture.is_some()),
+            PbrDefine::Occlusion(prim.pbr_material.occlusion_texture.is_some()),
+            PbrDefine::Emissive(prim.pbr_material.emissive_texture.is_some()),
+            PbrDefine::Clearcoat(prim.clearcoat.is_some()),
+            PbrDefine::ClearcoatIntensity(
+                prim.clearcoat
+                    .as_ref()
+                    .and_then(|c| c.intensity_texture)
+                    .is_some(),
+            ),
+            PbrDefine::ClearcoatRoughness(
+                prim.clearcoat
+                    .as_ref()
+                    .and_then(|c| c.roughness_texture)
+                    .is_some(),
+            ),
         ]
     }
 
@@ -187,12 +220,21 @@ impl Renderer {
         if appstate.should_override_material {
             self.material.inner = appstate.pbr_material_override;
         } else {
-            self.material.inner.base_color_factor = prim.base_color_factor;
-            self.material.inner.emissive_factor[0..3].copy_from_slice(&prim.emissive_factor);
-            self.material.inner.metallic_factor = prim.metallic_factor;
-            self.material.inner.roughness_factor = prim.roughness_factor;
-            self.material.inner.normal_scale = prim.normal_scale;
-            self.material.inner.occlusion_strength = prim.occlusion_strength;
+            self.material.inner.base_color_factor = prim.pbr_material.base_color_factor;
+            self.material.inner.emissive_factor[0..3]
+                .copy_from_slice(&prim.pbr_material.emissive_factor);
+            self.material.inner.metallic_factor = prim.pbr_material.metallic_factor;
+            self.material.inner.roughness_factor = prim.pbr_material.roughness_factor;
+            self.material.inner.normal_scale = prim.pbr_material.normal_scale;
+            self.material.inner.occlusion_strength = prim.pbr_material.occlusion_strength;
+
+            if let Some(intensity_factor) = prim.clearcoat.as_ref().map(|c| c.intensity_factor) {
+                self.material.inner.clearcoat_intensity_factor = intensity_factor;
+            }
+
+            if let Some(roughness_factor) = prim.clearcoat.as_ref().map(|c| c.roughness_factor) {
+                self.material.inner.clearcoat_roughness_factor = roughness_factor;
+            }
         }
 
         self.material.update();

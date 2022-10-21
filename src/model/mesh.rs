@@ -11,7 +11,7 @@ use gltf::{
 
 use crate::ogl;
 
-use super::DataBundle;
+use super::{DataBundle, GlTextureId};
 
 /// Gltf terminology is needlessly confusing.
 /// A gltf 'Mesh' contains multiple real sub-meshes (called Primitives in the gltf parlance)
@@ -45,17 +45,9 @@ pub struct Primitive {
     pub vao: u32,
     pub indices_type: GLenum,
     pub num_indices: usize,
-    pub base_color_texture: Option<u32>,
-    pub base_color_factor: [f32; 4],
-    pub mr_texture: Option<u32>,
-    pub metallic_factor: f32,
-    pub roughness_factor: f32,
-    pub normal_texture: Option<u32>,
-    pub normal_scale: f32,
-    pub occlusion_texture: Option<u32>,
-    pub occlusion_strength: f32,
-    pub emissive_texture: Option<u32>,
-    pub emissive_factor: [f32; 3],
+
+    pub pbr_material: StdPbrMaterial,
+    pub clearcoat: Option<Clearcoat>,
 }
 
 impl Primitive {
@@ -117,21 +109,12 @@ impl Primitive {
             vao: 0,
             indices_type: indices.gl_type(),
             num_indices: indices.len(),
-            base_color_texture: None,
-            base_color_factor: [1.; 4],
-            mr_texture: None,
-            metallic_factor: 1.,
-            roughness_factor: 1.,
-            normal_texture: None,
-            normal_scale: 1.,
-            occlusion_texture: None,
-            occlusion_strength: 1.,
-            emissive_texture: None,
-            emissive_factor: [0.; 3],
+            pbr_material: StdPbrMaterial::default(),
+            clearcoat: None,
         };
 
         primitive.create_buffers(vertices, indices);
-        primitive.create_textures(&material, bundle);
+        primitive.load_material(&material, bundle);
 
         Ok(primitive)
     }
@@ -171,36 +154,70 @@ impl Primitive {
         }
     }
 
-    fn create_textures(&mut self, material: &gltf::Material, bundle: &mut DataBundle) {
+    fn load_material(&mut self, material: &gltf::Material, bundle: &mut DataBundle) {
         let pbr = material.pbr_metallic_roughness();
 
-        self.base_color_factor = pbr.base_color_factor();
+        self.pbr_material.base_color_factor = pbr.base_color_factor();
         if let Some(tex_info) = pbr.base_color_texture() {
-            self.base_color_texture = Some(self.create_texture(&tex_info.texture(), bundle))
+            self.pbr_material.base_color_texture =
+                Some(self.create_texture(&tex_info.texture(), bundle))
         };
 
-        self.metallic_factor = pbr.metallic_factor();
-        self.roughness_factor = pbr.roughness_factor();
+        self.pbr_material.metallic_factor = pbr.metallic_factor();
+        self.pbr_material.roughness_factor = pbr.roughness_factor();
         if let Some(tex_info) = pbr.metallic_roughness_texture() {
-            self.mr_texture = Some(self.create_texture(&tex_info.texture(), bundle))
+            self.pbr_material.mr_texture = Some(self.create_texture(&tex_info.texture(), bundle))
         }
 
         if let Some(normal_tex_info) = material.normal_texture() {
-            self.normal_scale = normal_tex_info.scale();
-            if self.normal_scale != 1. {
-                println!("Watch out for normal scale !");
+            self.pbr_material.normal_scale = normal_tex_info.scale();
+            if self.pbr_material.normal_scale != 1. {
+                println!("WARNING: normal scale isn't implemented!");
             }
-            self.normal_texture = Some(self.create_texture(&normal_tex_info.texture(), bundle))
+            self.pbr_material.normal_texture =
+                Some(self.create_texture(&normal_tex_info.texture(), bundle))
         }
 
         if let Some(occlusion_texture) = material.occlusion_texture() {
-            self.occlusion_strength = occlusion_texture.strength();
-            self.occlusion_texture = Some(self.create_texture(&occlusion_texture.texture(), bundle))
+            self.pbr_material.occlusion_strength = occlusion_texture.strength();
+            self.pbr_material.occlusion_texture =
+                Some(self.create_texture(&occlusion_texture.texture(), bundle))
         }
 
-        self.emissive_factor = material.emissive_factor();
+        self.pbr_material.emissive_factor = material.emissive_factor();
         if let Some(tex_info) = material.emissive_texture() {
-            self.emissive_texture = Some(self.create_texture(&tex_info.texture(), bundle))
+            self.pbr_material.emissive_texture =
+                Some(self.create_texture(&tex_info.texture(), bundle))
+        }
+
+        if let Some(clearcoat) = material.clearcoat() {
+            let clearcoat_factor = clearcoat.clearcoat_factor();
+            // The clearcoat layer is disabled if clearcoat == 0.0
+            if clearcoat_factor != 0. {
+                let mut clearcoat_m = Clearcoat::default();
+
+                clearcoat_m.intensity_factor = clearcoat_factor;
+                if let Some(clearcoat_texture) = clearcoat.clearcoat_texture() {
+                    clearcoat_m.intensity_texture =
+                        Some(self.create_texture(&clearcoat_texture.texture(), bundle))
+                }
+
+                clearcoat_m.roughness_factor = clearcoat.clearcoat_roughness_factor();
+                if let Some(clearcoat_roughness_texture) = clearcoat.clearcoat_roughness_texture() {
+                    clearcoat_m.roughness_texture =
+                        Some(self.create_texture(&clearcoat_roughness_texture.texture(), bundle));
+                }
+
+                if let Some(clearcoat_normal_texture) = clearcoat.clearcoat_normal_texture() {
+                    clearcoat_m.normal_texture_scale = clearcoat_normal_texture.scale();
+                    clearcoat_m.normal_texture =
+                        Some(self.create_texture(&clearcoat_normal_texture.texture(), bundle));
+
+                    println!("WARNING: clearcoat normal texture isn't implemented!")
+                }
+
+                self.clearcoat = Some(clearcoat_m);
+            }
         }
     }
 
@@ -208,7 +225,7 @@ impl Primitive {
     ///
     /// If the texture already exists (bundle.gl_textures\[texture_index\] == Some(...)),
     /// no new texture is created, only the Texture struct is cloned.
-    fn create_texture(&mut self, tex: &gltf::Texture, bundle: &mut DataBundle) -> u32 {
+    fn create_texture(&mut self, tex: &gltf::Texture, bundle: &mut DataBundle) -> GlTextureId {
         let tex_index = tex.source().index();
         if let Some(texture) = bundle.gl_textures[tex_index] {
             return texture;
@@ -301,6 +318,67 @@ impl Primitive {
         unsafe {
             gl::TextureParameteri(texture, gl::TEXTURE_WRAP_S, wrap_s as i32);
             gl::TextureParameteri(texture, gl::TEXTURE_WRAP_T, wrap_t as i32);
+        }
+    }
+}
+
+/// Standard PBR material parameters
+pub struct StdPbrMaterial {
+    pub base_color_texture: Option<GlTextureId>,
+    pub base_color_factor: [f32; 4],
+
+    pub mr_texture: Option<GlTextureId>,
+    pub metallic_factor: f32,
+    pub roughness_factor: f32,
+
+    pub normal_texture: Option<GlTextureId>,
+    pub normal_scale: f32,
+
+    pub occlusion_texture: Option<GlTextureId>,
+    pub occlusion_strength: f32,
+
+    pub emissive_texture: Option<GlTextureId>,
+    pub emissive_factor: [f32; 3],
+}
+
+impl Default for StdPbrMaterial {
+    fn default() -> Self {
+        Self {
+            base_color_texture: None,
+            base_color_factor: [1.; 4],
+            mr_texture: None,
+            metallic_factor: 1.,
+            roughness_factor: 1.,
+            normal_texture: None,
+            normal_scale: 1.,
+            occlusion_texture: None,
+            occlusion_strength: 1.,
+            emissive_texture: None,
+            emissive_factor: [0.; 3],
+        }
+    }
+}
+
+pub struct Clearcoat {
+    pub intensity_factor: f32,
+    pub intensity_texture: Option<GlTextureId>,
+
+    pub roughness_factor: f32,
+    pub roughness_texture: Option<GlTextureId>,
+
+    pub normal_texture: Option<GlTextureId>,
+    pub normal_texture_scale: f32,
+}
+
+impl Default for Clearcoat {
+    fn default() -> Self {
+        Self {
+            intensity_factor: 0.,
+            intensity_texture: None,
+            roughness_factor: 0.,
+            roughness_texture: None,
+            normal_texture: None,
+            normal_texture_scale: 1.,
         }
     }
 }

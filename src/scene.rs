@@ -30,16 +30,18 @@ impl Scene {
 
         add("resources/bottle/WaterBottle.gltf")?;
 
-        add("resources/santa_conga_freebiexmass/drum.gltf")?;
+        add("resources/ToyCar.glb")?;
 
-        add("resources/antonio_mascarenha/apartment.gltf")?;
+        add("resources/santa_conga_freebiexmass/drum.gltf")?;
 
         add("resources/game_ready_pbr_microscope/microscope.gltf")?;
 
         let len = models.len();
         models[len - 1].transform = glam::Mat4::from_scale(Vec3::splat(0.05));
 
-        models[len - 2].transform = glam::Mat4::from_scale(Vec3::splat(10.0));
+        models[len - 2].transform = glam::Mat4::from_scale(Vec3::splat(3.0));
+
+        models[len - 3].transform = glam::Mat4::from_scale(Vec3::splat(20.0));
 
         Ok(Self { models })
     }

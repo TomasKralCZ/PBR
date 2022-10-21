@@ -1,6 +1,6 @@
 use glam::Mat4;
 
-use crate::ogl::uniform_buffer::UniformBufferElement;
+use crate::ogl::{self, uniform_buffer::UniformBufferElement};
 
 /// Uniform buffer element that stores the transformation matrices
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Copy, Clone)]
@@ -22,5 +22,5 @@ impl Transforms {
 }
 
 impl UniformBufferElement for Transforms {
-    const BINDING: u32 = 1;
+    const BINDING: u32 = ogl::TRANSFORM_BINDING;
 }
