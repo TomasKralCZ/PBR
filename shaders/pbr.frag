@@ -54,15 +54,41 @@ layout(std140, binding = 2) uniform Lighting
     uniform uint lights;
 };
 
-layout(binding = 7) uniform samplerCube irradiance_map;
-layout(binding = 8) uniform samplerCube prefilter_map;
-layout(binding = 9) uniform sampler2D brdf_lut;
+layout(binding = 7) uniform samplerCube irradianceMap;
+layout(binding = 8) uniform samplerCube prefilterMap;
+layout(binding = 9) uniform sampler2D brdfLut;
 
 out vec4 FragColor;
 
 const float PI = 3.14159265359;
 const float ROUGHNESS_MIN = 0.0001;
 
+const float GAMMA = 2.2;
+
+const float DIELECTRIC_FRESNEL = 0.04;
+
+// Parameters that stay same for the whole pixel
+struct ShadingParams {
+    vec4 albedo;
+
+    vec3 viewDir;
+    vec3 normal;
+    // viewDir * normal (dot product)
+    float NoV;
+
+    float roughness;
+    float metalness;
+    vec3 f0;
+
+#ifdef CLEARCOAT
+    vec3 clearcoatNormal;
+    float clearcoatNoV;
+    float clearcoatRoughness;
+    float clearcoatIntensity;
+#endif
+};
+
+// TODO: better normal mapping
 #ifdef NORMAL_MAP
 vec3 getNormalFromMap()
 {
@@ -82,37 +108,33 @@ vec3 getNormalFromMap()
 }
 #endif
 
-vec3 fresnelSchlick(vec3 f0, float cosTheta)
+vec3 fresnelSchlick(vec3 f0, float VoH)
 {
-    return f0 + (1. - f0) * pow(clamp(1. - cosTheta, 0.0, 1.0), 5.);
+    return f0 + (1. - f0) * pow(clamp(1. - VoH, 0.0, 1.0), 5.);
 }
 
-float fresnelSchlick(float f0, float cosTheta)
+float fresnelSchlick(float f0, float VoH)
 {
-    return f0 + (1. - f0) * pow(clamp(1. - cosTheta, 0.0, 1.0), 5.);
+    return f0 + (1. - f0) * pow(clamp(1. - VoH, 0.0, 1.0), 5.);
+}
+
+vec3 fresnelSchlickRoughness(float VoH, vec3 f0, float roughness)
+{
+    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - VoH, 0.0, 1.0), 5.0);
 }
 
 // GGX / Trowbridge-Reitz
-float normalDistribution(vec3 normal, vec3 halfway, float roughness)
+float normalDistribution(float NoH, float roughness)
 {
-    float a = roughness * roughness;
-    float asq = a * a;
-
-    float nh = max(dot(normal, halfway), 0.);
-    float denom = (nh * nh) * (asq - 1.) + 1.;
+    float asq = roughness * roughness;
+    float denom = (NoH * NoH) * (asq - 1.) + 1.;
 
     return (asq) / (PI * denom * denom);
 }
 
-vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
-{
-    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
 float geometry_ggx(float ndv, float roughness)
 {
-    float a = roughness * roughness;
-    float asq = a * a;
+    float asq = roughness * roughness;
 
     float denom = ndv + sqrt(asq + ((1 - asq) * (ndv * ndv)));
 
@@ -120,45 +142,29 @@ float geometry_ggx(float ndv, float roughness)
 }
 
 // Smith
-float geometryShadowing(vec3 normal, vec3 viewDir, vec3 lightDir,
-    float roughness)
+float geometryShadowing(float NoV, float NoL, float roughness)
 {
-    float nv = max(dot(normal, viewDir), 0.0);
-    float nl = max(dot(normal, lightDir), 0.0);
-
-    float ggx2 = geometry_ggx(nv, roughness);
-    float ggx1 = geometry_ggx(nl, roughness);
+    float ggx2 = geometry_ggx(NoV, roughness);
+    float ggx1 = geometry_ggx(NoL, roughness);
 
     return ggx1 * ggx2;
 }
 
 #ifdef CLEARCOAT
-vec3 clearcoatBrdf(out float clearcoatFresnel, vec3 normal, vec3 halfway,
-    vec3 viewDir, vec3 lightDir, float cosTheta)
+vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway,
+    vec3 lightDir, float VoH)
 {
-    float clearcoatRoughness = clearcoatIntensityFactor;
-
-#ifdef CLEARCOAT_ROUGHNESS_MAP
-    clearcoatRoughness *= texture(clearcoatRoughnessTex, vsOut.texCoords).x;
-#endif
-
-    clearcoatRoughness = clearcoatIntensityFactor * clearcoatRoughnessFactor;
-    clearcoatRoughness = clamp(clearcoatRoughness, ROUGHNESS_MIN, 1.0);
-
-    float clearcoatIntensity = clearcoatIntensityFactor;
-
-#ifdef CLEARCOAT_INTENSITY_MAP
-    clearcoatIntensity *= texture(clearcoatIntensityTex, vsOut.texCoords).x;
-#endif
+    float clearcoatNoH = max(dot(halfway, sp.clearcoatNormal), 0.0);
+    float clearcoatNoL = max(dot(lightDir, sp.clearcoatNormal), 0.0);
 
     // clearcoat BRDF
-    float clearcoatDistribution = normalDistribution(normal, halfway, clearcoatRoughness);
-    float clearcoatGeometry = geometryShadowing(normal, viewDir, lightDir, clearcoatRoughness);
+    float normalDistribution = normalDistribution(clearcoatNoH, sp.clearcoatRoughness);
+    float geometry = geometryShadowing(sp.clearcoatNoV, clearcoatNoL, sp.clearcoatRoughness);
     // Coating IOR is 1.5 (f0 == 0.04) - equivalent to polyurethane
-    clearcoatFresnel = fresnelSchlick(0.04, cosTheta) * clearcoatIntensity;
+    fresnel = fresnelSchlick(DIELECTRIC_FRESNEL, VoH) * sp.clearcoatIntensity;
 
-    vec3 numerator = clearcoatDistribution * clearcoatGeometry * vec3(clearcoatFresnel);
-    float denominator = 4.0 * max(dot(viewDir, normal), 0.0) * max(dot(lightDir, normal), 0.0);
+    vec3 numerator = normalDistribution * geometry * vec3(fresnel);
+    float denominator = 4.0 * sp.clearcoatNoV * clearcoatNoL;
     // + 0.0001 to prevent divide by zero
     vec3 specular = numerator / (denominator + 0.0001);
 
@@ -166,65 +172,42 @@ vec3 clearcoatBrdf(out float clearcoatFresnel, vec3 normal, vec3 halfway,
 }
 #endif
 
-void main()
+vec3 calculateDirectLighting(ShadingParams sp)
 {
-    float gamma = 2.2;
-
-    vec4 albedo = base_color_factor;
-#ifdef ALBEDO_MAP
-    albedo *= texture(abledoTex, vsOut.texCoords);
-#endif
-
-    albedo.rgb = pow(albedo.rgb, vec3(gamma));
-
-    float roughness = roughness_factor;
-    float metalness = metallic_factor;
-#ifdef MR_MAP
-    roughness *= texture(mrTex, vsOut.texCoords).g;
-    metalness *= texture(mrTex, vsOut.texCoords).b;
-#endif
-
-    roughness = clamp(roughness, ROUGHNESS_MIN, 1.0);
-
-    vec3 f0 = vec3(0.04);
-    f0 = mix(f0, albedo.rgb, metalness);
-
-    vec3 viewDir = normalize(camPos.xyz - vsOut.fragPos);
-#ifdef NORMAL_MAP
-    vec3 normal = getNormalFromMap();
-#else
-    vec3 normal = normalize(vsOut.normal);
-#endif
-
     vec3 totalRadiance = vec3(0.);
+
     for (int i = 0; i < lights; i++) {
         vec3 lightDir = normalize(lightPositions[i].xyz - vsOut.fragPos);
-        vec3 halfway = normalize(viewDir + lightDir);
-        float cosTheta = max(dot(halfway, viewDir), 0.);
+        vec3 halfway = normalize(sp.viewDir + lightDir);
+        float VoH = max(dot(halfway, sp.viewDir), 0.);
+        float NoH = max(dot(sp.normal, halfway), 0.0);
+        float NoL = max(dot(sp.normal, lightDir), 0.0);
 
         // TODO: should add attenuation...
         vec3 radiance = lightColors[i].xyz;
 
         // Cook-Torrance BRDF
-        float normalDistribution = normalDistribution(normal, halfway, roughness);
-        float geometry = geometryShadowing(normal, viewDir, lightDir, roughness);
-        vec3 fresnel = fresnelSchlick(f0, cosTheta);
+        float normalDistribution = normalDistribution(NoH, sp.roughness);
+        float geometry = geometryShadowing(sp.NoV, NoL, sp.roughness);
+        vec3 fresnel = fresnelSchlick(sp.f0, VoH);
 
 #ifdef CLEARCOAT
         float clearcoatFresnel;
-        vec3 clearcoatColor = clearcoatBrdf(clearcoatFresnel, normal, halfway, viewDir, lightDir, cosTheta);
+        vec3 clearcoatColor = clearcoatBrdf(sp, clearcoatFresnel, halfway, lightDir, VoH);
 #endif
 
         vec3 numerator = normalDistribution * geometry * fresnel;
-        float denominator = 4.0 * max(dot(viewDir, normal), 0.0) * max(dot(lightDir, normal), 0.0);
+        float denominator = 4.0 * sp.NoV * NoL;
         // + 0.0001 to prevent divide by zero
         vec3 specular = numerator / (denominator + 0.0001);
 
-        vec3 kD = vec3(1.0) - fresnel;
-        kD *= 1.0 - metalness;
+        // diffuse is 1 - fresnel (the amount of reflected light)
+        vec3 kd = vec3(1.0) - fresnel;
+        // metals have no diffuse, attenuate for in-between materials
+        kd *= 1.0 - sp.metalness;
 
-        vec3 diffuse = kD * albedo.rgb / PI;
-        float nl = max(dot(normal, lightDir), 0.0);
+        // Lambertian diffuse
+        vec3 diffuse = kd * sp.albedo.rgb / PI;
 
 #ifdef CLEARCOAT
         // Energy loss due to the clearcoat layer is given by 1 - clearcoatFresnel
@@ -233,42 +216,129 @@ void main()
         vec3 brdf = diffuse + specular;
 #endif
 
-        totalRadiance += brdf * radiance * nl;
+        totalRadiance += brdf * radiance * NoL;
     }
 
-    // environment lighting
-    vec3 F = fresnelSchlickRoughness(max(dot(normal, viewDir), 0.0), f0, roughness);
-    vec3 kS = F;
-    vec3 kD = 1.0 - kS;
-    kD *= 1.0 - metalness;
+    return totalRadiance;
+}
 
-    vec3 irradiance = texture(irradiance_map, normal).rgb;
-    vec3 diffuse = irradiance * albedo.rgb;
+vec3 calculateIBL(ShadingParams sp)
+{
+    vec3 F = fresnelSchlickRoughness(sp.NoV, sp.f0, sp.roughness);
+    vec3 kD = 1.0 - F;
+    kD *= 1.0 - sp.metalness;
 
-    vec3 R = reflect(-viewDir, normal);
+    vec3 irradiance = texture(irradianceMap, sp.normal).rgb;
+    vec3 iblDiffuse = irradiance * sp.albedo.rgb;
+
+    vec3 R = reflect(-sp.viewDir, sp.normal);
 
     const float MAX_REFLECTION_LOD = 6.0;
-    vec3 prefiltered_color = textureLod(prefilter_map, R, roughness * MAX_REFLECTION_LOD).rgb;
-    vec2 env_brdf = texture(brdf_lut, vec2(max(dot(normal, viewDir), 0.0), roughness)).rg;
-    vec3 specular = prefiltered_color * (F * env_brdf.x + env_brdf.y);
+    vec3 prefilteredLight = textureLod(prefilterMap, R, sp.roughness * MAX_REFLECTION_LOD).rgb;
+    vec2 dfg = texture(brdfLut, vec2(sp.NoV, sp.roughness)).rg;
+    vec3 iblSpecular = prefilteredLight * (F * dfg.x + dfg.y);
 
-    vec3 ambient = (kD * diffuse + specular);
+#ifdef CLEARCOAT
+    // https://google.github.io/filament/Filament.html#lighting/imagebasedlights/clearcoat
+    float clearcoatFresnel = fresnelSchlick(DIELECTRIC_FRESNEL, sp.NoV) * sp.clearcoatIntensity;
+
+    // Apply clearcoat IBL
+    vec3 clearcoatPrefilteredLight = textureLod(prefilterMap, R, sp.clearcoatRoughness * MAX_REFLECTION_LOD).rgb;
+    vec2 clearcoatDfg = texture(brdfLut, vec2(sp.NoV, sp.clearcoatRoughness)).rg;
+    vec3 clearcoatIblSpecular = clearcoatPrefilteredLight * (clearcoatFresnel * clearcoatDfg.x + clearcoatDfg.y);
+
+    // base layer attenuation for energy compensation
+    iblDiffuse *= 1.0 - clearcoatFresnel;
+    iblSpecular *= 1.0 - clearcoatFresnel;
+
+    vec3 ambient = (kD * iblDiffuse + iblSpecular) + clearcoatIblSpecular;
+#else
+    vec3 ambient = (kD * iblDiffuse + iblSpecular);
+#endif
 
 #ifdef OCCLUSION_MAP
     ambient *= texture(occlusionTex, vsOut.texCoords).x * occlusion_strength;
 #endif
 
-    vec3 color = ambient + totalRadiance;
+    return ambient;
+}
+
+void initShadingParams(inout ShadingParams sp)
+{
+    sp.albedo = base_color_factor;
+#ifdef ALBEDO_MAP
+    sp.albedo *= texture(abledoTex, vsOut.texCoords);
+#endif
+
+    sp.albedo.rgb = pow(sp.albedo.rgb, vec3(GAMMA));
+
+    sp.viewDir = normalize(camPos.xyz - vsOut.fragPos);
+
+#ifdef NORMAL_MAP
+    sp.normal = getNormalFromMap();
+#else
+    sp.normal = normalize(vsOut.normal);
+#endif
+
+    sp.NoV = max(dot(sp.normal, sp.viewDir), 0.0);
+
+    // Disney roughness remapping
+    float perceptualRoughness = roughness_factor;
+    sp.metalness = metallic_factor;
+#ifdef MR_MAP
+    perceptualRoughness *= texture(mrTex, vsOut.texCoords).g;
+    sp.metalness *= texture(mrTex, vsOut.texCoords).b;
+#endif
+
+    // Prevent division by 0
+    sp.roughness = perceptualRoughness * perceptualRoughness;
+    sp.roughness = clamp(sp.roughness, ROUGHNESS_MIN, 1.0);
+
+    sp.f0 = vec3(DIELECTRIC_FRESNEL);
+    sp.f0 = mix(sp.f0, sp.albedo.rgb, sp.metalness);
+
+#ifdef CLEARCOAT
+    sp.clearcoatRoughness = clearcoatRoughnessFactor;
+
+#ifdef CLEARCOAT_ROUGHNESS_MAP
+    sp.clearcoatRoughness *= texture(clearcoatRoughnessTex, vsOut.texCoords).x;
+#endif
+    // Disney remapping
+    sp.clearcoatRoughness = sp.clearcoatRoughness * sp.clearcoatRoughness;
+    // Prevent division by 0
+    sp.clearcoatRoughness = clamp(sp.clearcoatRoughness, ROUGHNESS_MIN, 1.0);
+
+    sp.clearcoatIntensity = clearcoatIntensityFactor;
+#ifdef CLEARCOAT_INTENSITY_MAP
+    sp.clearcoatIntensity *= texture(clearcoatIntensityTex, vsOut.texCoords).x;
+#endif
+
+    // TODO: separate clearcoat normal map
+    sp.clearcoatNormal = sp.normal;
+    sp.clearcoatNoV = max(dot(sp.clearcoatNormal, sp.viewDir), 0.0);
+#endif
+}
+
+void main()
+{
+    ShadingParams sp;
+    initShadingParams(sp);
+
+    vec3 directLight = calculateDirectLighting(sp);
+    vec3 environmentLight = calculateIBL(sp);
+
+    vec3 color = environmentLight + directLight;
 
 #ifdef EMISSIVE_MAP
     vec4 emissive = texture(emissiveTex, vsOut.texCoords);
-    emissive.rgb = pow(emissive.rgb, vec3(gamma));
+    emissive.rgb = pow(emissive.rgb, vec3(GAMMA));
     color += emissive.rgb * emissive_factor.xyz;
 #endif
 
-    // HDR tonemapping
+    // Reinhard tonemapping
     color = color / (color + vec3(1.0));
-    color = pow(color, vec3(1.0 / gamma));
+    // gamma correction
+    color = pow(color, vec3(1.0 / GAMMA));
 
     FragColor = vec4(color, 1.0);
 }

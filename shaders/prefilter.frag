@@ -65,11 +65,10 @@ vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness)
 // ----------------------------------------------------------------------------
 void main()
 {
+    // Position in the cubemap acts as a normal vector...
     vec3 N = normalize(localPos);
-
     // make the simplyfying assumption that V equals R equals the normal
-    vec3 R = N;
-    vec3 V = R;
+    vec3 V = N;
 
     const uint SAMPLE_COUNT = 1024u;
     vec3 prefilteredColor = vec3(0.0);
@@ -88,12 +87,11 @@ void main()
             float D = DistributionGGX(N, H, roughness);
             float NdotH = max(dot(N, H), 0.0);
             float HdotV = max(dot(H, V), 0.0);
-            float pdf = D * NdotH / (4.0 * HdotV) + 0.0001;
 
+            float pdf = D * NdotH / ((4.0 * HdotV) + 0.0001);
             float resolution = 1024.0; // resolution of source cubemap (per face)
             float saTexel = 4.0 * PI / (6.0 * resolution * resolution);
             float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 0.0001);
-
             float mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
 
             prefilteredColor += textureLod(environmentMap, L, mipLevel).rgb * NdotL;

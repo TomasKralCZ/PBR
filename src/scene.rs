@@ -30,6 +30,10 @@ impl Scene {
 
         add("resources/bottle/WaterBottle.gltf")?;
 
+        add("resources/free_1975_porsche_911_930_turbo/porsche.gltf")?;
+
+        add("resources/shoe_with_clearcoat/shoe.gltf")?;
+
         add("resources/ToyCar.glb")?;
 
         add("resources/santa_conga_freebiexmass/drum.gltf")?;

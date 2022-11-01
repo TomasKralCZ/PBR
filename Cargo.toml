@@ -4,20 +4,22 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-glam = { version = "0.21.2", features = ["glam-assert", "bytemuck"] }
+glam = { version = "0.22", features = ["glam-assert", "bytemuck"] }
 bytemuck = { version = "1.9.1", features = ["derive"] }
 eyre = "0.6.7"
-# Latest version only has OpenGl 4.5
+
+#Latest version only has OpenGl 4.5
 gl = { git = "https://github.com/brendanzab/gl-rs" }
-gltf = { version = "1.0.0", features = ["KHR_materials_ior", "KHR_materials_clearcoat"]}
-egui_sdl2_gl = "0.16.0"
-egui = "0.16"
-sdl2 = "0.35"
+gltf = { version = "1.0.0", features = ["KHR_materials_ior", "KHR_materials_clearcoat"] }
 image = { version = "0.24.2", features = ["png", "jpeg", "hdr"] }
+
+sdl2 = "0.35"
+egui = "0.16"
+egui_sdl2_gl = "0.16.0"
 
 # For clearcoat extension
 [patch.crates-io]
-gltf = { path = "../gltf"}
+gltf = { path = "../gltf" }
 
 [profile.dev.package."*"]
 opt-level = 3
