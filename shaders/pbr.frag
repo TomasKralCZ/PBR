@@ -10,17 +10,20 @@ in VsOut
 }
 vsOut;
 
+out vec4 FragColor;
+
 layout(std140, binding = 1) uniform PbrMaterial
 {
-    uniform vec4 base_color_factor;
-    uniform vec4 emissive_factor;
-    uniform float metallic_factor;
-    uniform float roughness_factor;
-    uniform float normal_scale;
-    uniform float occlusion_strength;
+    uniform vec4 baseColorFactor;
+    uniform vec4 emissiveFactor;
+    uniform float metallicFactor;
+    uniform float roughnessFactor;
+    uniform float normalScale;
+    uniform float occlusionStrength;
 
     uniform float clearcoatIntensityFactor;
     uniform float clearcoatRoughnessFactor;
+    uniform float clearcoatNormalScale;
 };
 
 #ifdef ALBEDO_MAP
@@ -45,6 +48,9 @@ layout(binding = 5) uniform sampler2D clearcoatIntensityTex;
 #ifdef CLEARCOAT_ROUGHNESS_MAP
 layout(binding = 6) uniform sampler2D clearcoatRoughnessTex;
 #endif
+#ifdef CLEARCOAT_NORMAL_MAP
+layout(binding = 7) uniform sampler2D clearcoatNormalTex;
+#endif
 
 layout(std140, binding = 2) uniform Lighting
 {
@@ -54,11 +60,16 @@ layout(std140, binding = 2) uniform Lighting
     uniform uint lights;
 };
 
-layout(binding = 7) uniform samplerCube irradianceMap;
-layout(binding = 8) uniform samplerCube prefilterMap;
-layout(binding = 9) uniform sampler2D brdfLut;
+layout(binding = 8) uniform samplerCube irradianceMap;
+layout(binding = 9) uniform samplerCube prefilterMap;
+layout(binding = 10) uniform sampler2D brdfLut;
 
-out vec4 FragColor;
+layout(std140, binding = 3) uniform Settings
+{
+    uniform bool clearcoatEnabled;
+    uniform bool directLightEnabled;
+    uniform bool IBLEnabled;
+};
 
 const float PI = 3.14159265359;
 const float ROUGHNESS_MIN = 0.0001;
@@ -88,22 +99,36 @@ struct ShadingParams {
 #endif
 };
 
-// TODO: better normal mapping
-#ifdef NORMAL_MAP
-vec3 getNormalFromMap()
+#if defined(NORMAL_MAP) || defined(CLEARCOAT_NORMAL_MAP)
+// Taken from http://www.thetenthplanet.de/archives/1180
+mat3 cotangentFrame(vec3 N, vec3 p, vec2 uv)
 {
-    vec3 tangentNormal = (normal_scale * texture(normalTex, vsOut.texCoords).xyz) * 2.0 - 1.0;
+    // get edge vectors of the pixel triangle
+    vec3 dp1 = dFdx(p);
+    vec3 dp2 = dFdy(p);
+    vec2 duv1 = dFdx(uv);
+    vec2 duv2 = dFdy(uv);
 
-    vec3 Q1 = dFdx(vsOut.fragPos);
-    vec3 Q2 = dFdy(vsOut.fragPos);
-    vec2 st1 = dFdx(vsOut.texCoords);
-    vec2 st2 = dFdy(vsOut.texCoords);
+    // solve the linear system
+    vec3 dp2perp = cross(dp2, N);
+    vec3 dp1perp = cross(N, dp1);
+    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
 
-    vec3 N = normalize(vsOut.normal);
-    vec3 T = normalize(Q1 * st2.t - Q2 * st1.t);
-    vec3 B = -normalize(cross(N, T));
-    mat3 TBN = mat3(T, B, N);
+    // construct a scale-invariant frame
+    float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
 
+    return mat3(T * invmax, B * invmax, N);
+}
+
+// Adapted from http://www.thetenthplanet.de/archives/1180
+vec3 getNormalFromMap(sampler2D tex, float scaleNormal, vec3 viewDir)
+{
+    // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#_material_normaltextureinfo_scale
+    vec3 tangentNormal = normalize((texture(tex, vsOut.texCoords).xyz) * 2.0 - 1.0)
+        * vec3(scaleNormal, scaleNormal, 1.0);
+
+    mat3 TBN = cotangentFrame(normalize(vsOut.normal), -viewDir, vsOut.texCoords);
     return normalize(TBN * tangentNormal);
 }
 #endif
@@ -132,7 +157,7 @@ float normalDistribution(float NoH, float roughness)
     return (asq) / (PI * denom * denom);
 }
 
-float geometry_ggx(float ndv, float roughness)
+float geometryGgx(float ndv, float roughness)
 {
     float asq = roughness * roughness;
 
@@ -144,8 +169,8 @@ float geometry_ggx(float ndv, float roughness)
 // Smith
 float geometryShadowing(float NoV, float NoL, float roughness)
 {
-    float ggx2 = geometry_ggx(NoV, roughness);
-    float ggx1 = geometry_ggx(NoL, roughness);
+    float ggx2 = geometryGgx(NoV, roughness);
+    float ggx1 = geometryGgx(NoL, roughness);
 
     return ggx1 * ggx2;
 }
@@ -210,8 +235,13 @@ vec3 calculateDirectLighting(ShadingParams sp)
         vec3 diffuse = kd * sp.albedo.rgb / PI;
 
 #ifdef CLEARCOAT
-        // Energy loss due to the clearcoat layer is given by 1 - clearcoatFresnel
-        vec3 brdf = (diffuse + specular) * (1. - clearcoatFresnel) + clearcoatColor;
+        vec3 brdf;
+        if (clearcoatEnabled) {
+            // Energy loss due to the clearcoat layer is given by 1 - clearcoatFresnel
+            brdf = (diffuse + specular) * (1. - clearcoatFresnel) + clearcoatColor;
+        } else {
+            brdf = diffuse + specular;
+        }
 #else
         vec3 brdf = diffuse + specular;
 #endif
@@ -231,41 +261,65 @@ vec3 calculateIBL(ShadingParams sp)
     vec3 irradiance = texture(irradianceMap, sp.normal).rgb;
     vec3 iblDiffuse = irradiance * sp.albedo.rgb;
 
-    vec3 R = reflect(-sp.viewDir, sp.normal);
+    vec3 reflectDir = reflect(-sp.viewDir, sp.normal);
 
     const float MAX_REFLECTION_LOD = 6.0;
-    vec3 prefilteredLight = textureLod(prefilterMap, R, sp.roughness * MAX_REFLECTION_LOD).rgb;
+    vec3 prefilteredLight = textureLod(prefilterMap, reflectDir, sp.roughness * MAX_REFLECTION_LOD).rgb;
     vec2 dfg = texture(brdfLut, vec2(sp.NoV, sp.roughness)).rg;
     vec3 iblSpecular = prefilteredLight * (F * dfg.x + dfg.y);
 
+    vec3 environmentLight = vec3(0.);
+
 #ifdef CLEARCOAT
-    // https://google.github.io/filament/Filament.html#lighting/imagebasedlights/clearcoat
-    float clearcoatFresnel = fresnelSchlick(DIELECTRIC_FRESNEL, sp.NoV) * sp.clearcoatIntensity;
+    if (clearcoatEnabled) {
+        vec3 clearcoatReflectDir = reflect(-sp.viewDir, sp.clearcoatNormal);
 
-    // Apply clearcoat IBL
-    vec3 clearcoatPrefilteredLight = textureLod(prefilterMap, R, sp.clearcoatRoughness * MAX_REFLECTION_LOD).rgb;
-    vec2 clearcoatDfg = texture(brdfLut, vec2(sp.NoV, sp.clearcoatRoughness)).rg;
-    vec3 clearcoatIblSpecular = clearcoatPrefilteredLight * (clearcoatFresnel * clearcoatDfg.x + clearcoatDfg.y);
+        // https://google.github.io/filament/Filament.html#lighting/imagebasedlights/clearcoat
+        float clearcoatFresnel = fresnelSchlick(DIELECTRIC_FRESNEL, sp.clearcoatNoV) * sp.clearcoatIntensity;
 
-    // base layer attenuation for energy compensation
-    iblDiffuse *= 1.0 - clearcoatFresnel;
-    iblSpecular *= 1.0 - clearcoatFresnel;
+        // Apply clearcoat IBL
+        vec3 clearcoatPrefilteredLight = textureLod(prefilterMap, clearcoatReflectDir, sp.clearcoatRoughness * MAX_REFLECTION_LOD).rgb;
+        vec2 clearcoatDfg = texture(brdfLut, vec2(sp.clearcoatNoV, sp.clearcoatRoughness)).rg;
+        vec3 clearcoatIblSpecular = clearcoatPrefilteredLight * (clearcoatFresnel * clearcoatDfg.x + clearcoatDfg.y);
 
-    vec3 ambient = (kD * iblDiffuse + iblSpecular) + clearcoatIblSpecular;
+        // base layer attenuation for energy compensation
+        iblDiffuse *= 1.0 - clearcoatFresnel;
+        iblSpecular *= 1.0 - clearcoatFresnel;
+
+        environmentLight = (kD * iblDiffuse + iblSpecular) + clearcoatIblSpecular;
+    } else {
+        environmentLight = (kD * iblDiffuse + iblSpecular);
+    }
 #else
-    vec3 ambient = (kD * iblDiffuse + iblSpecular);
+    environmentLight = (kD * iblDiffuse + iblSpecular);
 #endif
 
 #ifdef OCCLUSION_MAP
-    ambient *= texture(occlusionTex, vsOut.texCoords).x * occlusion_strength;
+    environmentLight *= texture(occlusionTex, vsOut.texCoords).x * occlusionStrength;
 #endif
 
-    return ambient;
+    return environmentLight;
 }
+
+#ifdef CLEARCOAT
+// Formula from:
+// https://google.github.io/filament/Filament.html#materialsystem/clearcoatmodel/baselayermodification
+// It's derived from Fresnel's formulas
+void modifyBaseF0(inout vec3 f0, float clearcoatIntensity)
+{
+    vec3 sqrtF0 = sqrt(f0);
+    vec3 numerator = (1. - 5. * sqrtF0);
+    vec3 denom = (5. - sqrtF0);
+
+    vec3 newF0 = (numerator * numerator) / (denom * denom);
+    // Only modify base f0 if there's actually coating
+    f0 = mix(f0, newF0, clearcoatIntensity);
+}
+#endif
 
 void initShadingParams(inout ShadingParams sp)
 {
-    sp.albedo = base_color_factor;
+    sp.albedo = baseColorFactor;
 #ifdef ALBEDO_MAP
     sp.albedo *= texture(abledoTex, vsOut.texCoords);
 #endif
@@ -275,7 +329,7 @@ void initShadingParams(inout ShadingParams sp)
     sp.viewDir = normalize(camPos.xyz - vsOut.fragPos);
 
 #ifdef NORMAL_MAP
-    sp.normal = getNormalFromMap();
+    sp.normal = getNormalFromMap(normalTex, normalScale, sp.viewDir);
 #else
     sp.normal = normalize(vsOut.normal);
 #endif
@@ -283,8 +337,8 @@ void initShadingParams(inout ShadingParams sp)
     sp.NoV = max(dot(sp.normal, sp.viewDir), 0.0);
 
     // Disney roughness remapping
-    float perceptualRoughness = roughness_factor;
-    sp.metalness = metallic_factor;
+    float perceptualRoughness = roughnessFactor;
+    sp.metalness = metallicFactor;
 #ifdef MR_MAP
     perceptualRoughness *= texture(mrTex, vsOut.texCoords).g;
     sp.metalness *= texture(mrTex, vsOut.texCoords).b;
@@ -301,7 +355,8 @@ void initShadingParams(inout ShadingParams sp)
     sp.clearcoatRoughness = clearcoatRoughnessFactor;
 
 #ifdef CLEARCOAT_ROUGHNESS_MAP
-    sp.clearcoatRoughness *= texture(clearcoatRoughnessTex, vsOut.texCoords).x;
+    // For some reason the roughness is read from the *green* channel
+    sp.clearcoatRoughness *= texture(clearcoatRoughnessTex, vsOut.texCoords).g;
 #endif
     // Disney remapping
     sp.clearcoatRoughness = sp.clearcoatRoughness * sp.clearcoatRoughness;
@@ -310,12 +365,23 @@ void initShadingParams(inout ShadingParams sp)
 
     sp.clearcoatIntensity = clearcoatIntensityFactor;
 #ifdef CLEARCOAT_INTENSITY_MAP
-    sp.clearcoatIntensity *= texture(clearcoatIntensityTex, vsOut.texCoords).x;
+    sp.clearcoatIntensity *= texture(clearcoatIntensityTex, vsOut.texCoords).r;
 #endif
 
-    // TODO: separate clearcoat normal map
-    sp.clearcoatNormal = sp.normal;
+    if (clearcoatEnabled) {
+        modifyBaseF0(sp.f0, sp.clearcoatIntensity);
+    }
+
+#ifdef CLEARCOAT_NORMAL_MAP
+    sp.clearcoatNormal = getNormalFromMap(clearcoatNormalTex, clearcoatNormalScale, sp.viewDir);
+#else
+    // https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_clearcoat/README.md
+    // If clearcoatNormalTexture is not given, no normal mapping is applied to the clear coat layer,
+    // even if normal mapping is applied to the base material.
+    sp.clearcoatNormal = normalize(vsOut.normal);
+#endif
     sp.clearcoatNoV = max(dot(sp.clearcoatNormal, sp.viewDir), 0.0);
+
 #endif
 }
 
@@ -324,15 +390,20 @@ void main()
     ShadingParams sp;
     initShadingParams(sp);
 
-    vec3 directLight = calculateDirectLighting(sp);
-    vec3 environmentLight = calculateIBL(sp);
+    vec3 color = vec3(0.);
 
-    vec3 color = environmentLight + directLight;
+    if (IBLEnabled) {
+        color += calculateIBL(sp);
+    }
+
+    if (directLightEnabled) {
+        color += calculateDirectLighting(sp);
+    }
 
 #ifdef EMISSIVE_MAP
     vec4 emissive = texture(emissiveTex, vsOut.texCoords);
     emissive.rgb = pow(emissive.rgb, vec3(GAMMA));
-    color += emissive.rgb * emissive_factor.xyz;
+    color += emissive.rgb * emissiveFactor.xyz;
 #endif
 
     // Reinhard tonemapping
@@ -340,5 +411,5 @@ void main()
     // gamma correction
     color = pow(color, vec3(1.0 / GAMMA));
 
-    FragColor = vec4(color, 1.0);
+    FragColor = vec4(color, sp.albedo.a);
 }

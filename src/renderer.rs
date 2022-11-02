@@ -5,9 +5,8 @@ use eyre::Result;
 use glam::{Mat4, Vec3};
 
 use crate::{
-    app::AppState,
+    app::{AppState, RenderViewportDim},
     camera::Camera,
-    gui::RenderViewportDim,
     model::{Mesh, Model, Node, Primitive},
     ogl::{self, shader::shader_permutations::ShaderDefines, uniform_buffer::UniformBuffer},
 };
@@ -15,6 +14,7 @@ use crate::{
 mod ibl;
 mod lighting;
 pub mod material;
+mod settings;
 mod shaders;
 mod transforms;
 
@@ -22,6 +22,7 @@ pub use material::PbrMaterial;
 
 use self::{
     lighting::Lighting,
+    settings::Settings,
     shaders::{PbrDefine, Shaders},
     transforms::Transforms,
 };
@@ -35,6 +36,8 @@ pub struct Renderer {
     pub material: UniformBuffer<PbrMaterial>,
     /// Current lighting settings
     lighting: UniformBuffer<Lighting>,
+    /// Runtime rendering settings
+    pub settings: UniformBuffer<Settings>,
     sphere: Model,
     cube_vao: u32,
     cubemap_tex_id: u32,
@@ -57,6 +60,7 @@ impl Renderer {
             transforms: UniformBuffer::new(Transforms::new_indentity()),
             material: UniformBuffer::new(PbrMaterial::new()),
             lighting: UniformBuffer::new(Lighting::new()),
+            settings: UniformBuffer::new(Settings::new()),
             sphere: Model::from_gltf("resources/Sphere.glb")?,
             cube_vao,
             cubemap_tex_id,
@@ -67,7 +71,7 @@ impl Renderer {
     }
 
     /// Render a new frame
-    pub fn render(&mut self, model: &mut Model, camera: &mut dyn Camera, appstate: &AppState) {
+    pub fn render(&mut self, model: &Model, camera: &mut dyn Camera, appstate: &AppState) {
         Self::reset_gl_state(&appstate.render_viewport_dim);
 
         let persp = Mat4::perspective_rh_gl(
@@ -76,6 +80,8 @@ impl Renderer {
             0.1,
             1000.,
         );
+
+        self.settings.update();
 
         self.transforms.inner.projection = persp;
         self.transforms.inner.view = camera.view_mat();
@@ -88,11 +94,12 @@ impl Renderer {
         self.render_lights();
 
         let transform = model.transform;
-        self.render_node(&mut model.root, transform, appstate);
+        self.render_node(&model.root, transform, appstate);
 
         self.shaders.cubemap_shader.draw_with(|| unsafe {
             gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.cubemap_tex_id);
+            //gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.cubemap_tex_id);
+            gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.irradiance_map_id);
 
             Self::draw_cube(self.cube_vao);
         });
@@ -102,10 +109,13 @@ impl Renderer {
         unsafe {
             gl::Enable(gl::DEPTH_TEST);
             gl::DepthFunc(gl::LEQUAL);
+
             gl::Enable(gl::CULL_FACE);
             gl::CullFace(gl::BACK);
             gl::FrontFace(gl::CCW);
+
             gl::Enable(gl::MULTISAMPLE);
+
             gl::Viewport(
                 viewport_dim.min_x as i32,
                 viewport_dim.min_y as i32,
@@ -114,19 +124,24 @@ impl Renderer {
             );
             gl::ClearColor(0.15, 0.15, 0.15, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+
             gl::Enable(gl::TEXTURE_CUBE_MAP_SEAMLESS);
+
+            // TODO: enable / disable alopha blending based on GLTF
+            gl::Enable(gl::BLEND);
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
         }
     }
 
     /// Recursive - traverses the node hierarchy and handles each node.
-    fn render_node(&mut self, node: &mut Node, outer_transform: Mat4, appstate: &AppState) {
+    fn render_node(&mut self, node: &Node, outer_transform: Mat4, appstate: &AppState) {
         let next_level_transform = outer_transform * node.transform;
 
         if let Some(mesh) = &node.mesh {
             self.render_mesh(mesh, next_level_transform, appstate);
         }
 
-        for node in &mut node.children {
+        for node in &node.children {
             self.render_node(node, next_level_transform, appstate);
         }
     }
@@ -186,6 +201,11 @@ impl Renderer {
             ogl::CLEARCOAT_ROUGHNESS_PORT,
         );
 
+        bind_texture_unit(
+            primitive.clearcoat.as_ref().and_then(|c| c.normal_texture),
+            ogl::CLEARCOAT_NORMAL_PORT,
+        );
+
         unsafe {
             gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.irradiance_map_id);
             gl::BindTextureUnit(ogl::PREFILTER_PORT, self.prefilter_map_id);
@@ -213,6 +233,12 @@ impl Renderer {
                     .and_then(|c| c.roughness_texture)
                     .is_some(),
             ),
+            PbrDefine::ClearcoatNormal(
+                prim.clearcoat
+                    .as_ref()
+                    .and_then(|c| c.normal_texture)
+                    .is_some(),
+            ),
         ]
     }
 
@@ -234,6 +260,10 @@ impl Renderer {
 
             if let Some(roughness_factor) = prim.clearcoat.as_ref().map(|c| c.roughness_factor) {
                 self.material.inner.clearcoat_roughness_factor = roughness_factor;
+            }
+
+            if let Some(normal_scale) = prim.clearcoat.as_ref().map(|c| c.normal_texture_scale) {
+                self.material.inner.clearcoat_normal_scale = normal_scale;
             }
         }
 

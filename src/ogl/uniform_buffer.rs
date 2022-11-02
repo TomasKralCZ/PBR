@@ -7,6 +7,11 @@ use bytemuck::{Pod, Zeroable};
 pub struct UniformBuffer<T: UniformBufferElement> {
     pub id: u32,
     pub inner: T,
+
+    // When data is uploaded to the GPU, this is used to check whether the buffer on the
+    // GPU side actually needs to be udated (whether the cached_copy is any different)
+    // This is lazy, but it works
+    cached_copy: T,
 }
 
 impl<T: UniformBufferElement> UniformBuffer<T>
@@ -28,34 +33,45 @@ where
             gl::BindBuffer(gl::UNIFORM_BUFFER, 0);
         }
 
-        let s = Self { id, inner };
+        let mut s = Self {
+            id,
+            inner,
+            cached_copy: inner.clone(),
+        };
         s.update();
         s
     }
 
     /// Update the UniformBuffer with the current data
-    pub fn update(&self) {
+    pub fn update(&mut self) {
         unsafe {
             gl::BindBuffer(gl::UNIFORM_BUFFER, self.id);
 
-            self.inner.update();
+            self.inner.update(&mut self.cached_copy);
 
             gl::BindBuffer(gl::UNIFORM_BUFFER, 0);
         }
     }
 }
 
-pub trait UniformBufferElement: Sized + Zeroable + Pod + Clone + Copy {
+pub trait UniformBufferElement:
+    Sized + Zeroable + Pod + Clone + Copy + PartialEq + std::fmt::Debug
+{
     /// The binding port
     const BINDING: u32;
     /// Update buffer data using gl::BufferSubData
-    fn update(&self) {
-        let buf = bytemuck::bytes_of(self);
+    fn update(&self, cached_copy: &mut Self) {
+        if self != cached_copy {
+            *cached_copy = self.clone();
 
-        unsafe {
-            gl::BufferSubData(gl::UNIFORM_BUFFER, 0, buf.len() as isize, buf.as_ptr() as _);
+            let buf = bytemuck::bytes_of(self);
+
+            unsafe {
+                gl::BufferSubData(gl::UNIFORM_BUFFER, 0, buf.len() as isize, buf.as_ptr() as _);
+            }
         }
     }
+
     /// Allocate data for the element with gl::BufferData
     fn init_buffer(&self) {
         unsafe {

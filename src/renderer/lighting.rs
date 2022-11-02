@@ -3,7 +3,7 @@ use glam::Vec4;
 use crate::ogl::{uniform_buffer::UniformBufferElement, self};
 
 /// Uniform buffer element that stores the lighing data
-#[derive(bytemuck::Pod, bytemuck::Zeroable, Copy, Clone)]
+#[derive(bytemuck::Pod, bytemuck::Zeroable, Copy, Clone, PartialEq, Debug)]
 #[repr(C)]
 pub struct Lighting {
     pub light_pos: [Vec4; 4],

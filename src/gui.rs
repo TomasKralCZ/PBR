@@ -2,15 +2,14 @@ use egui::{CtxRef, RichText, Ui};
 
 use crate::{
     camera::{Camera, CameraTyp},
-    model::Model,
     renderer::Renderer,
-    window::AppWindow,
+    scene::LazyModel,
     AppState,
 };
 
 /// All state that needs to be rendered in the GUI
 pub struct GuiCtx<'a> {
-    pub models: &'a mut [Model],
+    pub models: &'a [LazyModel],
     pub camera: &'a mut dyn Camera,
     pub cam_typ: &'a mut CameraTyp,
     pub renderer: &'a mut Renderer,
@@ -87,6 +86,11 @@ impl AppState {
         });
 
         ui.group(|ui| {
+            ui.add(egui::Label::new(
+                RichText::new("Material").heading().strong(),
+            ));
+            ui.separator();
+
             ui.checkbox(&mut self.should_override_material, "Override material");
 
             ui.add_enabled_ui(self.should_override_material, |ui| {
@@ -109,6 +113,33 @@ impl AppState {
                 );
             });
         });
+
+        ui.group(|ui| {
+            ui.add(egui::Label::new(
+                RichText::new("Render settings").heading().strong(),
+            ));
+            ui.separator();
+
+            let mut clearcoat_enabled = gui_ctx.renderer.settings.inner.clearcoat_enabled();
+            let mut direct_light_enabled = gui_ctx.renderer.settings.inner.direct_light_enabled();
+            let mut ibl_enabled = gui_ctx.renderer.settings.inner.ibl_enabled();
+
+            ui.checkbox(&mut clearcoat_enabled, "Clearcoat enabled");
+            ui.checkbox(&mut direct_light_enabled, "Direct light enabled");
+            ui.checkbox(&mut ibl_enabled, "IBL enabled");
+
+            gui_ctx
+                .renderer
+                .settings
+                .inner
+                .set_clearcoat_enabled(clearcoat_enabled);
+            gui_ctx
+                .renderer
+                .settings
+                .inner
+                .set_direct_light_enabled(direct_light_enabled);
+            gui_ctx.renderer.settings.inner.set_ibl_enabled(ibl_enabled);
+        });
     }
 
     fn left_panel(&mut self, ui: &mut Ui, gui_ctx: &GuiCtx) {
@@ -118,7 +149,7 @@ impl AppState {
 
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for (i, model) in gui_ctx.models.iter().enumerate() {
-                    if ui.button(&model.name).clicked() {
+                    if ui.button(model.name()).clicked() {
                         self.selected_model = Some(i);
                     }
                 }
@@ -175,25 +206,4 @@ impl AppState {
                 });
         }
     } */
-}
-
-pub struct RenderViewportDim {
-    pub min_x: f32,
-    pub min_y: f32,
-    pub width: f32,
-    pub height: f32,
-}
-
-impl RenderViewportDim {
-    pub fn new(window: &AppWindow) -> Self {
-        let width = window.width as f32;
-        let height = window.height as f32;
-
-        Self {
-            min_x: 0.,
-            min_y: 0.,
-            width,
-            height,
-        }
-    }
 }

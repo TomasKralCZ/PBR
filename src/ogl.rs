@@ -24,15 +24,17 @@ pub const EMISSIVE_PORT: u32 = 4;
 
 pub const CLEARCOAT_INTENSITY_PORT: u32 = 5;
 pub const CLEARCOAT_ROUGHNESS_PORT: u32 = 6;
+pub const CLEARCOAT_NORMAL_PORT: u32 = 7;
 
-pub const IRRADIANCE_PORT: u32 = 7;
-pub const PREFILTER_PORT: u32 = 8;
-pub const BRDF_PORT: u32 = 9;
+pub const IRRADIANCE_PORT: u32 = 8;
+pub const PREFILTER_PORT: u32 = 9;
+pub const BRDF_PORT: u32 = 10;
 
 // Uniform buffer bindings
 pub const TRANSFORM_BINDING: u32 = 0;
 pub const PBR_MATERIAL_BINDING: u32 = 1;
 pub const LIGHTNING_BINDING: u32 = 2;
+pub const SETTINGS_BINDING: u32 = 3;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Default)]

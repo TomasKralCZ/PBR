@@ -3,7 +3,7 @@ use glam::Mat4;
 use crate::ogl::{self, uniform_buffer::UniformBufferElement};
 
 /// Uniform buffer element that stores the transformation matrices
-#[derive(bytemuck::Pod, bytemuck::Zeroable, Copy, Clone)]
+#[derive(bytemuck::Pod, bytemuck::Zeroable, Copy, Clone, PartialEq, Debug)]
 #[repr(C)]
 pub struct Transforms {
     pub projection: Mat4,

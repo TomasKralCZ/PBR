@@ -171,9 +171,6 @@ impl Primitive {
 
         if let Some(normal_tex_info) = material.normal_texture() {
             self.pbr_material.normal_scale = normal_tex_info.scale();
-            if self.pbr_material.normal_scale != 1. {
-                println!("WARNING: normal scale isn't implemented!");
-            }
             self.pbr_material.normal_texture =
                 Some(self.create_texture(&normal_tex_info.texture(), bundle))
         }
@@ -212,8 +209,6 @@ impl Primitive {
                     clearcoat_m.normal_texture_scale = clearcoat_normal_texture.scale();
                     clearcoat_m.normal_texture =
                         Some(self.create_texture(&clearcoat_normal_texture.texture(), bundle));
-
-                    println!("WARNING: clearcoat normal texture isn't implemented!")
                 }
 
                 self.clearcoat = Some(clearcoat_m);

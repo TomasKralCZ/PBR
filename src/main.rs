@@ -70,11 +70,11 @@ fn main() -> Result<()> {
         handle_inputs(&mut window.event_pump, active_cam);
 
         if let Some(model) = appstate.selected_model {
-            renderer.render(&mut scene.models[model], active_cam, &appstate);
+            renderer.render(scene.get_model(model)?, active_cam, &appstate);
         }
 
         let mut gui_ctx = GuiCtx {
-            models: &mut scene.models,
+            models: scene.get_models(),
             camera: active_cam,
             cam_typ: &mut cam_typ,
             renderer: &mut renderer,
@@ -87,7 +87,8 @@ fn main() -> Result<()> {
             break 'render_loop;
         }
 
-        thread::sleep(Duration::from_millis(1));
+        // TODO: precise sleeping
+        thread::sleep(Duration::from_millis(10));
     }
 
     Ok(())

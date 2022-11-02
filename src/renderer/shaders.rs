@@ -19,6 +19,7 @@ pub enum PbrDefine {
     Clearcoat(bool),
     ClearcoatIntensity(bool),
     ClearcoatRoughness(bool),
+    ClearcoatNormal(bool),
 }
 
 impl AsRef<str> for PbrDefine {
@@ -32,12 +33,13 @@ impl AsRef<str> for PbrDefine {
             PbrDefine::Clearcoat(_) => "CLEARCOAT",
             PbrDefine::ClearcoatIntensity(_) => "CLEARCOAT_INTENSITY_MAP",
             PbrDefine::ClearcoatRoughness(_) => "CLEARCOAT_ROUGHNESS_MAP",
+            PbrDefine::ClearcoatNormal(_) => "CLEARCOAT_NORMAL_MAP",
         }
     }
 }
 
 impl ShaderDefines for PbrDefine {
-    const NUM_DEFINES: u32 = 8;
+    const NUM_DEFINES: u32 = 9;
 
     fn is_active(&self) -> bool {
         match self {
@@ -49,6 +51,7 @@ impl ShaderDefines for PbrDefine {
             PbrDefine::Clearcoat(active) => *active,
             PbrDefine::ClearcoatIntensity(active) => *active,
             PbrDefine::ClearcoatRoughness(active) => *active,
+            PbrDefine::ClearcoatNormal(active) => *active,
         }
     }
 
@@ -62,6 +65,7 @@ impl ShaderDefines for PbrDefine {
             PbrDefine::Clearcoat(_) => 5,
             PbrDefine::ClearcoatIntensity(_) => 6,
             PbrDefine::ClearcoatRoughness(_) => 7,
+            PbrDefine::ClearcoatNormal(_) => 8,
         }
     }
 }
