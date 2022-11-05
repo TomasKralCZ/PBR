@@ -6,9 +6,9 @@ use gltf::scene::Transform as GTransform;
 
 mod mesh;
 
-pub use self::mesh::{Mesh, Primitive};
+use crate::ogl::TextureId;
 
-pub type GlTextureId = u32;
+pub use self::mesh::{Mesh, Primitive};
 
 /// Image and vertex data of the asset.
 pub struct DataBundle {
@@ -17,7 +17,7 @@ pub struct DataBundle {
     /// Texture data
     images: Vec<gltf::image::Data>,
     /// To keep track if which textures were already sent to the GPU
-    pub gl_textures: Vec<Option<GlTextureId>>,
+    pub gl_textures: Vec<Option<TextureId>>,
 }
 
 impl DataBundle {

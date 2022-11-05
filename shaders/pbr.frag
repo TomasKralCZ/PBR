@@ -7,6 +7,8 @@ in VsOut
     vec2 texCoords;
     vec3 normal;
     vec3 fragPos;
+    vec3 tangent;
+    mat3 tbn;
 }
 vsOut;
 
@@ -128,8 +130,10 @@ vec3 getNormalFromMap(sampler2D tex, float scaleNormal, vec3 viewDir)
     vec3 tangentNormal = normalize((texture(tex, vsOut.texCoords).xyz) * 2.0 - 1.0)
         * vec3(scaleNormal, scaleNormal, 1.0);
 
-    mat3 TBN = cotangentFrame(normalize(vsOut.normal), -viewDir, vsOut.texCoords);
-    return normalize(TBN * tangentNormal);
+    return normalize(vsOut.tbn * tangentNormal);
+
+    /* mat3 TBN = cotangentFrame(normalize(vsOut.normal), -viewDir, vsOut.texCoords);
+    return normalize(TBN * tangentNormal); */
 }
 #endif
 
@@ -358,8 +362,6 @@ void initShadingParams(inout ShadingParams sp)
     // For some reason the roughness is read from the *green* channel
     sp.clearcoatRoughness *= texture(clearcoatRoughnessTex, vsOut.texCoords).g;
 #endif
-    // Disney remapping
-    sp.clearcoatRoughness = sp.clearcoatRoughness * sp.clearcoatRoughness;
     // Prevent division by 0
     sp.clearcoatRoughness = clamp(sp.clearcoatRoughness, ROUGHNESS_MIN, 1.0);
 

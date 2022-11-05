@@ -1,6 +1,5 @@
 use std::mem::size_of;
 
-use bytemuck::offset_of;
 use eyre::{eyre, Result};
 use gl::types::GLenum;
 use gltf::{
@@ -9,9 +8,11 @@ use gltf::{
     texture::{MagFilter, MinFilter, WrappingMode},
 };
 
-use crate::ogl;
+use crate::ogl::{self, TextureId};
 
-use super::{DataBundle, GlTextureId};
+mod tangents;
+
+use super::DataBundle;
 
 /// Gltf terminology is needlessly confusing.
 /// A gltf 'Mesh' contains multiple real sub-meshes (called Primitives in the gltf parlance)
@@ -58,16 +59,84 @@ impl Primitive {
             return Err(eyre!("primitive mode: '{mode:?}' is not impelemnted"));
         }
 
+        let mut vertex_buf = Self::load_vertex_atrrib_buf(&primitive, bundle)?;
+        let index_buf = Self::load_indices_buf(&primitive, bundle)?;
+
+        let mut prim = Self {
+            vao: 0,
+            // The type is fixed no, maybe I'll revert it to flexible type in the future
+            indices_type: gl::UNSIGNED_INT,
+            num_indices: index_buf.len(),
+            pbr_material: StdPbrMaterial::default(),
+            clearcoat: None,
+        };
+
+        let material = primitive.material();
+        prim.load_material(&material, bundle);
+
+        // TODO: investigate trangent calculation condition (anisotropy as well, right ?)
+        if prim.pbr_material.normal_texture.is_some()
+            || prim
+                .clearcoat
+                .as_ref()
+                .map(|c| c.normal_texture.is_some())
+                .unwrap_or(false)
+        {
+            prim.calculate_tangents(&mut vertex_buf, &index_buf);
+        }
+
+        prim.vao = Self::create_vao(vertex_buf, index_buf);
+
+        Ok(prim)
+    }
+
+    /// Creates OpenGL buffers from the loaded vertex data
+    fn create_vao(vertex_buf: Vec<Vertex>, index_buf: Vec<u32>) -> u32 {
+        let mut ibo = 0;
+        let mut vao = 0;
+
+        unsafe {
+            gl::CreateVertexArrays(1, &mut vao);
+
+            ogl::attach_float_buf_multiple_attribs(
+                vao,
+                &vertex_buf,
+                &Vertex::ATTRIB_SIZES,
+                &Vertex::ATTRIB_INDICES,
+                &Vertex::ATTRIB_TYPES,
+                size_of::<Vertex>(),
+                &Vertex::ATTRIB_OFFSETS,
+            );
+
+            // Indices
+            let indices_bytes = bytemuck::cast_slice::<u32, u8>(&index_buf);
+            gl::CreateBuffers(1, &mut ibo);
+            gl::NamedBufferStorage(
+                ibo,
+                indices_bytes.len() as isize,
+                indices_bytes.as_ptr() as _,
+                gl::DYNAMIC_STORAGE_BIT,
+            );
+            gl::VertexArrayElementBuffer(vao, ibo);
+        }
+
+        vao
+    }
+
+    fn load_vertex_atrrib_buf(
+        primitive: &gltf::Primitive,
+        bundle: &DataBundle,
+    ) -> Result<Vec<Vertex>> {
         let reader = primitive.reader(|buffer| Some(&bundle.buffers[buffer.index()]));
 
-        let position_iter = reader
+        let mut position_iter = reader
             .read_positions()
             .ok_or(eyre!("primitive doesn't containt positions"))?;
-        let normals_iter = reader
+        let mut normals_iter = reader
             .read_normals()
             .ok_or(eyre!("primitive doesn't containt normals"))?;
 
-        // TODO: handle textureless models...
+        // TODO: support models with more than 1 texture set ?
         let mut texcoords_reader = None;
         let mut texture_set = 0;
         while let Some(reader) = reader.read_tex_coords(texture_set) {
@@ -81,77 +150,46 @@ impl Primitive {
             texture_set += 1;
         }
 
-        let mut vertices = Vec::with_capacity(position_iter.len());
-        for (pos, normal) in position_iter.zip(normals_iter) {
+        let mut buf = Vec::with_capacity(position_iter.len());
+
+        while let Some(pos) = position_iter.next() {
+            let Some(normal) = normals_iter.next() else {
+                return Err(eyre!("primitive attributes have different lengths"));
+            };
+
             let texcoords = texcoords_reader
                 .as_mut()
-                .and_then(|r| r.next())
+                .and_then(|t| t.next())
                 .unwrap_or([0.; 2]);
-            vertices.push(Vertex {
+
+            // I'm doing all the tangent computation myself for compatibility (gltf 2.0 tangents are in mikktspace)
+            let tangent = [0.; 4];
+            let vertex = Vertex {
                 pos,
                 normal,
                 texcoords,
-            });
+                tangent,
+            };
+
+            buf.push(vertex);
         }
 
-        let indices = match reader
+        Ok(buf)
+    }
+
+    fn load_indices_buf(primitive: &gltf::Primitive, bundle: &DataBundle) -> Result<Vec<u32>> {
+        let reader = primitive.reader(|buffer| Some(&bundle.buffers[buffer.index()]));
+
+        let indices: Vec<u32> = match reader
             .read_indices()
             .ok_or(eyre!("primitive doesn't containt indices"))?
         {
-            ReadIndices::U32(b) => Indices::U32(b.collect()),
-            ReadIndices::U16(b) => Indices::U16(b.collect()),
-            ReadIndices::U8(b) => Indices::U8(b.collect()),
+            ReadIndices::U32(b) => b.collect(),
+            ReadIndices::U16(b) => b.map(|i| i as u32).collect(),
+            ReadIndices::U8(b) => b.map(|i| i as u32).collect(),
         };
 
-        let material = primitive.material();
-
-        let mut primitive = Self {
-            vao: 0,
-            indices_type: indices.gl_type(),
-            num_indices: indices.len(),
-            pbr_material: StdPbrMaterial::default(),
-            clearcoat: None,
-        };
-
-        primitive.create_buffers(vertices, indices);
-        primitive.load_material(&material, bundle);
-
-        Ok(primitive)
-    }
-
-    /// Creates OpenGL buffers from the loaded vertex data
-    fn create_buffers(&mut self, vertices: Vec<Vertex>, indices: Indices) {
-        let mut ibo = 0;
-        let mut vao = 0;
-
-        unsafe {
-            gl::CreateVertexArrays(1, &mut vao);
-
-            ogl::attach_float_buf_multiple_attribs(
-                vao,
-                &vertices,
-                &[3, 3, 2],
-                &[
-                    ogl::POSITION_INDEX,
-                    ogl::NORMALS_INDEX,
-                    ogl::TEXCOORDS_INDEX,
-                ],
-                &[gl::FLOAT, gl::FLOAT, gl::FLOAT],
-                size_of::<Vertex>(),
-                &[
-                    offset_of!(Vertex, pos),
-                    offset_of!(Vertex, normal),
-                    offset_of!(Vertex, texcoords),
-                ],
-            );
-
-            // Indices
-            gl::CreateBuffers(1, &mut ibo);
-            gl::NamedBufferData(ibo, indices.size() as isize, indices.ptr(), gl::STATIC_DRAW);
-            gl::VertexArrayElementBuffer(vao, ibo);
-
-            self.vao = vao;
-        }
+        Ok(indices)
     }
 
     fn load_material(&mut self, material: &gltf::Material, bundle: &mut DataBundle) {
@@ -220,7 +258,7 @@ impl Primitive {
     ///
     /// If the texture already exists (bundle.gl_textures\[texture_index\] == Some(...)),
     /// no new texture is created, only the Texture struct is cloned.
-    fn create_texture(&mut self, tex: &gltf::Texture, bundle: &mut DataBundle) -> GlTextureId {
+    fn create_texture(&mut self, tex: &gltf::Texture, bundle: &mut DataBundle) -> TextureId {
         let tex_index = tex.source().index();
         if let Some(texture) = bundle.gl_textures[tex_index] {
             return texture;
@@ -319,20 +357,20 @@ impl Primitive {
 
 /// Standard PBR material parameters
 pub struct StdPbrMaterial {
-    pub base_color_texture: Option<GlTextureId>,
+    pub base_color_texture: Option<TextureId>,
     pub base_color_factor: [f32; 4],
 
-    pub mr_texture: Option<GlTextureId>,
+    pub mr_texture: Option<TextureId>,
     pub metallic_factor: f32,
     pub roughness_factor: f32,
 
-    pub normal_texture: Option<GlTextureId>,
+    pub normal_texture: Option<TextureId>,
     pub normal_scale: f32,
 
-    pub occlusion_texture: Option<GlTextureId>,
+    pub occlusion_texture: Option<TextureId>,
     pub occlusion_strength: f32,
 
-    pub emissive_texture: Option<GlTextureId>,
+    pub emissive_texture: Option<TextureId>,
     pub emissive_factor: [f32; 3],
 }
 
@@ -356,12 +394,12 @@ impl Default for StdPbrMaterial {
 
 pub struct Clearcoat {
     pub intensity_factor: f32,
-    pub intensity_texture: Option<GlTextureId>,
+    pub intensity_texture: Option<TextureId>,
 
     pub roughness_factor: f32,
-    pub roughness_texture: Option<GlTextureId>,
+    pub roughness_texture: Option<TextureId>,
 
-    pub normal_texture: Option<GlTextureId>,
+    pub normal_texture: Option<TextureId>,
     pub normal_texture_scale: f32,
 }
 
@@ -378,57 +416,24 @@ impl Default for Clearcoat {
     }
 }
 
-/// Vertex indices for a primitive.
-///
-/// Better than using generics here.
-enum Indices {
-    U32(Vec<u32>),
-    U16(Vec<u16>),
-    U8(Vec<u8>),
-}
-
-impl Indices {
-    /// The size (in bytes) of the buffer
-    pub fn size(&self) -> usize {
-        match self {
-            Indices::U32(buf) => buf.len() * size_of::<u32>(),
-            Indices::U16(buf) => buf.len() * size_of::<u16>(),
-            Indices::U8(buf) => buf.len() * size_of::<u8>(),
-        }
-    }
-
-    /// The lenght (in elements) of the buffer
-    pub fn len(&self) -> usize {
-        match self {
-            Indices::U32(buf) => buf.len(),
-            Indices::U16(buf) => buf.len(),
-            Indices::U8(buf) => buf.len(),
-        }
-    }
-
-    /// A pointer to the start of the buffer
-    pub fn ptr(&self) -> *const std::ffi::c_void {
-        match self {
-            Indices::U32(buf) => buf.as_ptr() as _,
-            Indices::U16(buf) => buf.as_ptr() as _,
-            Indices::U8(buf) => buf.as_ptr() as _,
-        }
-    }
-
-    /// A GL_TYPE corresponding to the variant of the buffer
-    pub fn gl_type(&self) -> GLenum {
-        match self {
-            Indices::U32(_) => gl::UNSIGNED_INT,
-            Indices::U16(_) => gl::UNSIGNED_SHORT,
-            Indices::U8(_) => gl::UNSIGNED_BYTE,
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub pos: [f32; 3],
     pub normal: [f32; 3],
     pub texcoords: [f32; 2],
+    pub tangent: [f32; 4],
+}
+
+impl Vertex {
+    const ATTRIB_SIZES: [i32; 4] = [3, 3, 2, 4];
+    const ATTRIB_INDICES: [u32; 4] = [
+        ogl::POSITION_INDEX,
+        ogl::NORMALS_INDEX,
+        ogl::TEXCOORDS_INDEX,
+        ogl::TANGENT_INDEX,
+    ];
+
+    const ATTRIB_TYPES: [GLenum; 4] = [gl::FLOAT; 4];
+    const ATTRIB_OFFSETS: [usize; 4] = [0, 12, 24, 32];
 }

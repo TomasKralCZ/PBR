@@ -14,6 +14,7 @@ pub mod uniform_buffer;
 pub const POSITION_INDEX: u32 = 0;
 pub const NORMALS_INDEX: u32 = 1;
 pub const TEXCOORDS_INDEX: u32 = 2;
+pub const TANGENT_INDEX: u32 = 3;
 
 // Texture binding ports (units)
 pub const ALBEDO_PORT: u32 = 0;
@@ -35,6 +36,8 @@ pub const TRANSFORM_BINDING: u32 = 0;
 pub const PBR_MATERIAL_BINDING: u32 = 1;
 pub const LIGHTNING_BINDING: u32 = 2;
 pub const SETTINGS_BINDING: u32 = 3;
+
+pub type TextureId = u32;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Default)]
@@ -127,7 +130,7 @@ pub fn attach_float_buf<T: bytemuck::Pod + bytemuck::Zeroable>(
 pub fn attach_float_buf_multiple_attribs<T: bytemuck::Pod + bytemuck::Zeroable>(
     vao: u32,
     buffer: &[T],
-    componentss: &[i32],
+    components: &[i32],
     attrib_indexes: &[u32],
     types: &[u32],
     stride: usize,
@@ -157,7 +160,7 @@ pub fn attach_float_buf_multiple_attribs<T: bytemuck::Pod + bytemuck::Zeroable>(
             gl::VertexArrayAttribFormat(
                 vao,
                 attrib_indexes[i],
-                componentss[i],
+                components[i],
                 types[i],
                 gl::FALSE,
                 offsets[i] as _,

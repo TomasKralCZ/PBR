@@ -98,8 +98,8 @@ impl Renderer {
 
         self.shaders.cubemap_shader.draw_with(|| unsafe {
             gl::ActiveTexture(gl::TEXTURE0);
-            //gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.cubemap_tex_id);
-            gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.irradiance_map_id);
+            gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.cubemap_tex_id);
+            //gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.irradiance_map_id);
 
             Self::draw_cube(self.cube_vao);
         });
@@ -128,7 +128,7 @@ impl Renderer {
             gl::Enable(gl::TEXTURE_CUBE_MAP_SEAMLESS);
 
             // TODO: enable / disable alopha blending based on GLTF
-            gl::Enable(gl::BLEND);
+            //gl::Enable(gl::BLEND);
             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
         }
     }
