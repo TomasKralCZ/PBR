@@ -56,4 +56,21 @@ impl ComputeShader {
             Ok(shader_program)
         }
     }
+
+    // TODO: merge normal shaders and compute shaders ?
+    #[allow(unused)]
+    pub fn set_f32(&self, v: f32, name: &str) {
+        Self::check_uniform_name(name);
+        unsafe {
+            let loc = gl::GetUniformLocation(self.shader_id, name.as_ptr() as _);
+            gl::Uniform1f(loc, v);
+        }
+    }
+
+    // TODO: use cstr!() macro...
+    /// Uniform names have to be null-terminated and have to be ASCII (I think...)
+    fn check_uniform_name(name: &str) {
+        assert!(name.is_ascii());
+        assert!(name.ends_with('\0'));
+    }
 }

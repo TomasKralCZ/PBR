@@ -1,0 +1,76 @@
+#version 460 core
+
+//#import shaders/ibl/brdf_sampling.glsl
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(rg32f, binding = 0) uniform writeonly image2D brdfLut;
+
+float geometryGgx(float ndv, float roughness)
+{
+    float a = roughness * roughness;
+    float asq = a * a;
+
+    float denom = ndv + sqrt(asq + ((1 - asq) * (ndv * ndv)));
+
+    return (2 * ndv) / denom;
+}
+
+float geometryShadowing(vec3 normal, vec3 viewDir, vec3 lightDir,
+    float roughness)
+{
+    float nv = max(dot(normal, viewDir), 0.0);
+    float nl = max(dot(normal, lightDir), 0.0);
+
+    float ggx2 = geometryGgx(nv, roughness);
+    float ggx1 = geometryGgx(nl, roughness);
+
+    return ggx1 * ggx2;
+}
+
+vec2 integrateBrdf(float NdotV, float roughness)
+{
+    vec3 V;
+    V.x = sqrt(1.0 - NdotV * NdotV);
+    V.y = 0.0;
+    V.z = NdotV;
+
+    float A = 0.0;
+    float B = 0.0;
+
+    vec3 N = vec3(0.0, 0.0, 1.0);
+
+    const uint SAMPLE_COUNT = 1024u;
+    for (uint i = 0u; i < SAMPLE_COUNT; ++i) {
+        vec2 Xi = hammersley(i, SAMPLE_COUNT);
+        vec3 H = importanceSampleGgx(Xi, N, roughness);
+        vec3 L = normalize(2.0 * dot(V, H) * H - V);
+
+        float NdotL = max(L.z, 0.0);
+        float NdotH = max(H.z, 0.0);
+        float VdotH = max(dot(V, H), 0.0);
+
+        if (NdotL > 0.0) {
+            float G = geometryShadowing(N, V, L, roughness);
+            float G_Vis = (G * VdotH) / (NdotH * NdotV);
+            float Fc = pow(1.0 - VdotH, 5.0);
+
+            A += (1.0 - Fc) * G_Vis;
+            B += Fc * G_Vis;
+        }
+    }
+
+    A /= float(SAMPLE_COUNT);
+    B /= float(SAMPLE_COUNT);
+    return vec2(A, B);
+}
+
+void main()
+{
+    uvec2 globalId = gl_GlobalInvocationID.xy;
+    // INVESTIGATE: this remapping is a bit finicky
+    vec2 lutCoords = vec2(globalId.xy + 1) / vec2(imageSize(brdfLut).xy);
+
+    vec2 integratedBrdf = integrateBrdf(lutCoords.x, lutCoords.y);
+    imageStore(brdfLut, ivec2(globalId.xy), vec4(integratedBrdf, 0.0, 0.0));
+}

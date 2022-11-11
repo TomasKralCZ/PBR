@@ -1,0 +1,68 @@
+#version 460 core
+
+//#import shaders/ibl/cubemap_to_xyz.glsl
+//#import shaders/ibl/brdf_sampling.glsl
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0) uniform samplerCube cubemap;
+layout(rgba32f, binding = 1) uniform writeonly imageCube prefilterMap;
+
+uniform float roughness;
+
+float distributionGgx(vec3 N, vec3 H, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+
+    float nom = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return nom / denom;
+}
+
+void main()
+{
+    uvec3 globalId = gl_GlobalInvocationID.xyz;
+    vec3 normal = directionFromCubemapUv(globalId, imageSize(prefilterMap).x);
+
+    vec3 n = normalize(normal);
+    // make the simplyfying assumption that V equals R equals the normal
+    vec3 v = n;
+
+    const uint SAMPLE_COUNT = 1024u;
+    vec3 prefilteredColor = vec3(0.0);
+    float totalWeight = 0.0;
+
+    for (uint i = 0u; i < SAMPLE_COUNT; ++i) {
+        // generates a sample vector that's biased towards the preferred alignment
+        // direction (importance sampling).
+        vec2 Xi = hammersley(i, SAMPLE_COUNT);
+        vec3 h = importanceSampleGgx(Xi, n, roughness);
+        vec3 l = normalize(2.0 * dot(v, h) * h - v);
+
+        float NdotL = max(dot(n, l), 0.0);
+        if (NdotL > 0.0) {
+            // sample from the environment's mip level based on roughness/pdf
+            float D = distributionGgx(n, h, roughness);
+            float NdotH = max(dot(n, h), 0.0);
+            float HdotV = max(dot(n, v), 0.0);
+
+            float pdf = D * NdotH / ((4.0 * HdotV) + 0.0001);
+
+            const float resolution = 1024.0; // resolution of source cubemap (per face)
+            float saTexel = 4.0 * PI / (6.0 * resolution * resolution);
+            float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 0.0001);
+            float mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
+
+            prefilteredColor += textureLod(cubemap, l, mipLevel).rgb * NdotL;
+            totalWeight += NdotL;
+        }
+    }
+
+    prefilteredColor = prefilteredColor / totalWeight;
+    imageStore(prefilterMap, ivec3(globalId), vec4(prefilteredColor, 0.0));
+}

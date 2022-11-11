@@ -1,5 +1,7 @@
 #version 460 core
 
+//#import shaders/ibl/cubemap_to_xyz.glsl
+
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 layout(binding = 0) uniform samplerCube cubemap;
@@ -7,35 +9,10 @@ layout(rgba32f, binding = 1) uniform writeonly imageCube irradianceMap;
 
 const float PI = 3.14159265359;
 
-vec3 directionFromCubemapUv(uvec3 gid)
-{
-    float size = imageSize(irradianceMap).x;
-    // Map from (0, size) to (0, 1)
-    vec2 uv = gid.xy / (size - 1);
-    // Map from (0, 1) to (-1, 1)
-    uv = (uv * 2.0) - 1.0;
-
-    // For coordinates, check out https://www.khronos.org/opengl/wiki/Cubemap_Texture
-    switch (gid.z) {
-        case 0:
-            return normalize(vec3(1.0, -uv.y, -uv.x));
-        case 1:
-            return normalize(vec3(-1.0, -uv.y, uv.x));
-        case 2:
-            return normalize(vec3(uv.x, 1.0, uv.y));
-        case 3:
-            return normalize(vec3(uv.x, -1.0, -uv.y));
-        case 4:
-            return normalize(vec3(uv.x, -uv.y, 1.0));
-        default:
-            return normalize(vec3(-uv.x, -uv.y, -1.0));
-    }
-}
-
 void main()
 {
     uvec3 globalId = gl_GlobalInvocationID.xyz;
-    vec3 normal = directionFromCubemapUv(globalId);
+    vec3 normal = directionFromCubemapUv(globalId, imageSize(irradianceMap).x);
 
     // Create basis vectors
     vec3 up = vec3(0.0, 1.0, 0.0);

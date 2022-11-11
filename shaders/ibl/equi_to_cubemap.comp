@@ -1,0 +1,37 @@
+#version 460 core
+
+//#import shaders/tools/tonemap.glsl
+//#import shaders/ibl/cubemap_to_xyz.glsl
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(binding = 0) uniform sampler2D equimap;
+layout(rgba32f, binding = 1) uniform writeonly imageCube cubemap;
+
+// (1 / 2pi, 1 / pi)
+const vec2 pi_reciprocals = vec2(0.1591, 0.3183);
+
+// This maps a point from a sphere to a point on the equirectangular map.
+// https://en.wikipedia.org/wiki/UV_mapping#Finding_UV_on_a_sphere
+vec2 sampleSphericalMap(vec3 v)
+{
+    vec2 uv = vec2(atan(v.z, v.x), asin(v.y));
+    uv *= pi_reciprocals;
+    uv += 0.5;
+    return uv;
+}
+
+void main()
+{
+    uvec3 globalId = gl_GlobalInvocationID.xyz;
+    vec3 cubemapDir = directionFromCubemapUv(globalId, imageSize(cubemap).x);
+
+    // normalize(...) maps the vector to a "point on a sphere"
+    vec2 uv = sampleSphericalMap(normalize(cubemapDir));
+    vec3 color = texture(equimap, uv).rgb;
+
+    // INVESTIGATE: if this is needed
+    tonemap(color);
+
+    imageStore(cubemap, ivec3(globalId), vec4(color, 1.0));
+}

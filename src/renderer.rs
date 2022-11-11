@@ -1,6 +1,3 @@
-use std::mem::size_of;
-
-use bytemuck::offset_of;
 use eyre::Result;
 use glam::{Mat4, Vec3};
 
@@ -47,14 +44,7 @@ pub struct Renderer {
 impl Renderer {
     /// Create a new renderer
     pub fn new() -> Result<Self> {
-        let cube_vao = Self::init_cube();
-        let quad_vao = Self::init_quad();
-
-        let probe = ibl::Probe::new(
-            "resources/IBL/rustig_koppie_puresky_4k.hdr",
-            cube_vao,
-            quad_vao,
-        )?;
+        let probe = ibl::Probe::new("resources/IBL/rustig_koppie_puresky_4k.hdr")?;
 
         Ok(Self {
             shaders: Shaders::new()?,
@@ -64,7 +54,7 @@ impl Renderer {
             settings: UniformBuffer::new(Settings::new()),
             probe,
             sphere: Model::from_gltf("resources/Sphere.glb")?,
-            cube_vao,
+            cube_vao: Self::init_cube(),
         })
     }
 
@@ -96,8 +86,7 @@ impl Renderer {
 
         self.shaders.cubemap_shader.draw_with(|| unsafe {
             gl::ActiveTexture(gl::TEXTURE0);
-            //gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.probe.cubemap_tex_id);
-            gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.probe.irradiance_map_id);
+            gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.probe.cubemap_tex_id);
 
             Self::draw_cube(self.cube_vao);
         });
@@ -126,7 +115,7 @@ impl Renderer {
             gl::Enable(gl::TEXTURE_CUBE_MAP_SEAMLESS);
 
             // TODO: enable / disable alopha blending based on GLTF
-            //gl::Enable(gl::BLEND);
+            gl::Enable(gl::BLEND);
             gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
         }
     }
@@ -205,8 +194,8 @@ impl Renderer {
         );
 
         unsafe {
-            gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.probe.irradiance_map_id);
-            gl::BindTextureUnit(ogl::PREFILTER_PORT, self.probe.prefilter_map_id);
+            gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.probe.irradiance_tex_id);
+            gl::BindTextureUnit(ogl::PREFILTER_PORT, self.probe.prefilter_tex_id);
             gl::BindTextureUnit(ogl::BRDF_PORT, self.probe.brdf_lut_id);
         }
     }
@@ -338,36 +327,6 @@ impl Renderer {
         unsafe {
             gl::BindVertexArray(cube_vao);
             gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_BYTE, 0 as _);
-            gl::BindVertexArray(0);
-        }
-    }
-
-    fn init_quad() -> u32 {
-        let mut vao = 0;
-
-        unsafe {
-            gl::CreateVertexArrays(1, &mut vao);
-            ogl::attach_float_buf_multiple_attribs(
-                vao,
-                &ogl::QUAD_VERTICES,
-                &[3, 2],
-                &[0, 1],
-                &[gl::FLOAT, gl::FLOAT],
-                size_of::<ogl::QuadVertex>(),
-                &[
-                    offset_of!(ogl::QuadVertex, pos),
-                    offset_of!(ogl::QuadVertex, texcoords),
-                ],
-            );
-        }
-
-        vao
-    }
-
-    fn draw_quad(quad_vao: u32) {
-        unsafe {
-            gl::BindVertexArray(quad_vao);
-            gl::DrawArrays(gl::TRIANGLE_STRIP, 0, ogl::QUAD_VERTICES.len() as i32);
             gl::BindVertexArray(0);
         }
     }

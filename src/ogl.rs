@@ -46,14 +46,6 @@ pub struct QuadVertex {
     pub texcoords: [f32; 2],
 }
 
-#[rustfmt::skip]
-pub const QUAD_VERTICES: [QuadVertex; 4] = [
-    QuadVertex {pos: [-1., 1., 0.],texcoords: [0., 1.] },
-    QuadVertex {pos: [-1., -1., 0.],texcoords: [0., 0.] },
-    QuadVertex {pos: [1., 1., 0.],texcoords: [1., 1.] },
-    QuadVertex {pos: [1., -1., 0.],texcoords: [1., 0.] },
-];
-
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CubeVertex {
