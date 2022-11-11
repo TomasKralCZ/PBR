@@ -15,10 +15,10 @@ layout(std140, binding = 0) uniform Transforms
 out VsOut
 {
     vec2 texCoords;
-    vec3 normal;
     vec3 fragPos;
+    vec3 normal;
     vec3 tangent;
-    mat3 tbn;
+    vec3 bitangent;
 }
 vsOut;
 
@@ -27,14 +27,17 @@ void main()
     gl_Position = projection * view * model * vec4(inPos, 1.0);
 
     vsOut.texCoords = inTexcoords;
+    vsOut.fragPos = vec3(model * vec4(inPos, 1.0));
 
     mat3 normalMat = mat3(transpose(inverse(model)));
 
     // TODO: is normalization needed ?
     vsOut.normal = normalize(normalMat * inNormal);
-    vsOut.fragPos = vec3(model * vec4(inPos, 1.0));
     vsOut.tangent = normalize(normalMat * inTangent.w * inTangent.xyz);
 
-    vec3 bitangent = normalize(normalMat * (inTangent.w * (cross(inNormal, inTangent.xyz))));
-    vsOut.tbn = mat3(vsOut.tangent, bitangent, vsOut.normal);
+    // Gram-Schmidt process
+    vsOut.tangent = normalize(vsOut.tangent - dot(vsOut.tangent, vsOut.normal) * vsOut.normal);
+
+    // Correct handedness with tangent.w
+    vsOut.bitangent = normalize(inTangent.w * (cross(inNormal, inTangent.xyz)));
 }

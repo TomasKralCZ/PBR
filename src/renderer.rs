@@ -21,6 +21,7 @@ mod transforms;
 pub use material::PbrMaterial;
 
 use self::{
+    ibl::Probe,
     lighting::Lighting,
     settings::Settings,
     shaders::{PbrDefine, Shaders},
@@ -38,12 +39,9 @@ pub struct Renderer {
     lighting: UniformBuffer<Lighting>,
     /// Runtime rendering settings
     pub settings: UniformBuffer<Settings>,
+    probe: Probe,
     sphere: Model,
     cube_vao: u32,
-    cubemap_tex_id: u32,
-    irradiance_map_id: u32,
-    prefilter_map_id: u32,
-    brdf_lut_id: u32,
 }
 
 impl Renderer {
@@ -52,8 +50,11 @@ impl Renderer {
         let cube_vao = Self::init_cube();
         let quad_vao = Self::init_quad();
 
-        let (cubemap_tex_id, irradiance_map_id, prefilter_map_id, brdf_lut_id) =
-            ibl::load_cubemaps(cube_vao, quad_vao)?;
+        let probe = ibl::Probe::new(
+            "resources/IBL/rustig_koppie_puresky_4k.hdr",
+            cube_vao,
+            quad_vao,
+        )?;
 
         Ok(Self {
             shaders: Shaders::new()?,
@@ -61,12 +62,9 @@ impl Renderer {
             material: UniformBuffer::new(PbrMaterial::new()),
             lighting: UniformBuffer::new(Lighting::new()),
             settings: UniformBuffer::new(Settings::new()),
+            probe,
             sphere: Model::from_gltf("resources/Sphere.glb")?,
             cube_vao,
-            cubemap_tex_id,
-            irradiance_map_id,
-            prefilter_map_id,
-            brdf_lut_id,
         })
     }
 
@@ -98,8 +96,8 @@ impl Renderer {
 
         self.shaders.cubemap_shader.draw_with(|| unsafe {
             gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.cubemap_tex_id);
-            //gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.irradiance_map_id);
+            //gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.probe.cubemap_tex_id);
+            gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.probe.irradiance_map_id);
 
             Self::draw_cube(self.cube_vao);
         });
@@ -207,9 +205,9 @@ impl Renderer {
         );
 
         unsafe {
-            gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.irradiance_map_id);
-            gl::BindTextureUnit(ogl::PREFILTER_PORT, self.prefilter_map_id);
-            gl::BindTextureUnit(ogl::BRDF_PORT, self.brdf_lut_id);
+            gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.probe.irradiance_map_id);
+            gl::BindTextureUnit(ogl::PREFILTER_PORT, self.probe.prefilter_map_id);
+            gl::BindTextureUnit(ogl::BRDF_PORT, self.probe.brdf_lut_id);
         }
     }
 

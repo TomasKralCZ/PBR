@@ -1,5 +1,7 @@
 #version 460 core
 
+//#import shaders/tools/tonemap.glsl
+
 out vec4 FragColor;
 in vec3 localPos;
 
@@ -16,9 +18,9 @@ vec2 SampleSphericalMap(vec3 v)
 
 void main()
 {
-    vec2 uv = SampleSphericalMap(
-        normalize(localPos)); // make sure to normalize localPos
+    vec2 uv = SampleSphericalMap(normalize(localPos)); // make sure to normalize localPos
     vec3 color = texture(equirectangularMap, uv).rgb;
 
+    tonemap(color);
     FragColor = vec4(color, 1.0);
 }

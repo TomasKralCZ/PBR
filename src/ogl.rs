@@ -110,6 +110,8 @@ pub fn attach_float_buf<T: bytemuck::Pod + bytemuck::Zeroable>(
             gl::DYNAMIC_STORAGE_BIT,
         );
 
+        gl::BindVertexArray(vao);
+
         // attrib_index is implicitly the same as the vertex buffer binding !
         gl::VertexArrayVertexBuffer(vao, attrib_index, buf_id, 0, size_of::<T>() as i32);
 
@@ -149,6 +151,8 @@ pub fn attach_float_buf_multiple_attribs<T: bytemuck::Pod + bytemuck::Zeroable>(
             bytes.as_ptr() as _,
             gl::DYNAMIC_STORAGE_BIT,
         );
+
+        gl::BindVertexArray(vao);
 
         let buf_binding = 0;
 

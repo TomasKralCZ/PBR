@@ -1,14 +1,16 @@
 #version 460 core
 
-//@DEFINES@
+//#defines
+
+//#import shaders/tools/tonemap.glsl
 
 in VsOut
 {
     vec2 texCoords;
-    vec3 normal;
     vec3 fragPos;
+    vec3 normal;
     vec3 tangent;
-    mat3 tbn;
+    vec3 bitangent;
 }
 vsOut;
 
@@ -130,7 +132,9 @@ vec3 getNormalFromMap(sampler2D tex, float scaleNormal, vec3 viewDir)
     vec3 tangentNormal = normalize((texture(tex, vsOut.texCoords).xyz) * 2.0 - 1.0)
         * vec3(scaleNormal, scaleNormal, 1.0);
 
-    return normalize(vsOut.tbn * tangentNormal);
+    mat3 tbn = mat3(normalize(vsOut.tangent), normalize(vsOut.bitangent), normalize(vsOut.normal));
+
+    return normalize(tbn * tangentNormal);
 
     /* mat3 TBN = cotangentFrame(normalize(vsOut.normal), -viewDir, vsOut.texCoords);
     return normalize(TBN * tangentNormal); */
@@ -408,8 +412,8 @@ void main()
     color += emissive.rgb * emissiveFactor.xyz;
 #endif
 
-    // Reinhard tonemapping
-    color = color / (color + vec3(1.0));
+    tonemap(color);
+
     // gamma correction
     color = pow(color, vec3(1.0 / GAMMA));
 
