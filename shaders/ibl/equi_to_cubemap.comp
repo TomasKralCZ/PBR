@@ -30,8 +30,8 @@ void main()
     vec2 uv = sampleSphericalMap(normalize(cubemapDir));
     vec3 color = texture(equimap, uv).rgb;
 
-    // INVESTIGATE: if this is needed
-    tonemap(color);
+    // INVESTIGATE: handle extremely-high-contrast HDR maps better than using clamping
+    color = clamp(color, 0.0, 20.0);
 
     imageStore(cubemap, ivec3(globalId), vec4(color, 1.0));
 }
