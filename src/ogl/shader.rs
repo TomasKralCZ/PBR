@@ -12,7 +12,7 @@ pub mod shader_permutations;
 /// Allows setting uniforms with set_<> methods.
 ///
 /// Use the `draw_with` method for draw calls.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Shader {
     pub program_id: ProgramId,
 }
@@ -36,15 +36,11 @@ impl Shader {
 
     /// Loads a vertex shader and a fragment shader from specified paths and tries to create a shader program.
     pub fn with_files(vs_path: &str, fs_path: &str) -> Result<Shader> {
-        let mut vs_src =
+        let vs_src =
             String::from_utf8(fs::read(vs_path).wrap_err("Couldn't load the vertex shader file")?)?;
-        let mut fs_src = String::from_utf8(
+        let fs_src = String::from_utf8(
             fs::read(fs_path).wrap_err("Couldn't load the fragment shader file")?,
         )?;
-
-        // Add null-terminators !
-        vs_src.push('\0');
-        fs_src.push('\0');
 
         Self::with_src_defines(vs_src, &[], fs_src, &[])
     }
@@ -80,6 +76,9 @@ impl Shader {
     }
 
     fn compile_shader(src: &mut String, defines: &[&str], typ: GLenum) -> Result<ShaderId> {
+        // Null-terminator
+        src.push('\0');
+
         // Preprocessing steps
         Self::handle_imports(src)?;
 

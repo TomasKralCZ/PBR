@@ -6,9 +6,10 @@ use crate::{
     app::{AppState, RenderViewportDim},
     camera::Camera,
     model::{Mesh, Model, Node, Primitive},
-    ogl::{self, shader::shader_permutations::ShaderDefines, uniform_buffer::UniformBuffer},
+    ogl::{self, uniform_buffer::UniformBuffer, vao::Vao},
 };
 
+mod cube;
 mod ibl;
 mod lighting;
 pub mod material;
@@ -22,7 +23,7 @@ use self::{
     ibl::Probe,
     lighting::Lighting,
     settings::Settings,
-    shaders::{PbrDefine, Shaders},
+    shaders::{PbrDefines, Shaders},
     transforms::Transforms,
 };
 
@@ -39,7 +40,7 @@ pub struct Renderer {
     pub settings: UniformBuffer<Settings>,
     probe: Probe,
     sphere: Model,
-    cube_vao: u32,
+    cube: Vao,
 }
 
 impl Renderer {
@@ -55,13 +56,25 @@ impl Renderer {
             settings: UniformBuffer::new(Settings::new()),
             probe,
             sphere: Model::from_gltf("resources/Sphere.glb")?,
-            cube_vao: Self::init_cube(),
+            cube: cube::init_cube(),
         })
     }
 
     /// Render a new frame
     pub fn render(&mut self, model: &Model, camera: &mut dyn Camera, appstate: &AppState) {
         Self::reset_gl_state(&appstate.render_viewport_dim);
+        self.update_uniforms(appstate, camera, model);
+
+        self.render_lights();
+
+        let transform = model.transform;
+        self.render_node(&model.root, transform, appstate);
+
+        self.draw_cubemap();
+    }
+
+    fn update_uniforms(&mut self, appstate: &AppState, camera: &mut dyn Camera, model: &Model) {
+        self.settings.update();
 
         let persp = Mat4::perspective_rh_gl(
             f32::to_radians(60.),
@@ -70,8 +83,6 @@ impl Renderer {
             1000.,
         );
 
-        self.settings.update();
-
         self.transforms.inner.projection = persp;
         self.transforms.inner.view = camera.view_mat();
         self.transforms.inner.model = model.transform;
@@ -79,17 +90,20 @@ impl Renderer {
 
         self.lighting.inner.cam_pos = camera.get_pos().extend(0.0);
         self.lighting.update();
+    }
 
-        self.render_lights();
-
-        let transform = model.transform;
-        self.render_node(&model.root, transform, appstate);
-
+    fn draw_cubemap(&mut self) {
         self.shaders.cubemap_shader.use_shader(|| unsafe {
-            gl::ActiveTexture(gl::TEXTURE0);
-            gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.probe.cubemap_tex_id);
+            gl::BindTextureUnit(0, self.probe.cubemap_tex_id);
 
-            Self::draw_cube(self.cube_vao);
+            gl::BindVertexArray(self.cube.id);
+            gl::DrawElements(
+                gl::TRIANGLES,
+                cube::INDICES.len() as _,
+                gl::UNSIGNED_BYTE,
+                0 as _,
+            );
+            gl::BindVertexArray(0);
         });
     }
 
@@ -146,8 +160,8 @@ impl Renderer {
             let defines = Self::prim_pbr_defines(primitive);
             let shader = self
                 .shaders
-                .pbr
-                .get_shader(&defines)
+                .pbr_shaders
+                .get_shader(defines)
                 .expect("Error getting a shader");
 
             shader.use_shader(|| {
@@ -174,23 +188,20 @@ impl Renderer {
         );
         bind_texture_unit(primitive.pbr_material.emissive_texture, ogl::EMISSIVE_PORT);
 
+        let cc = &primitive.clearcoat;
+
         bind_texture_unit(
-            primitive
-                .clearcoat
-                .as_ref()
-                .and_then(|c| c.intensity_texture),
+            cc.as_ref().and_then(|c| c.intensity_texture),
             ogl::CLEARCOAT_INTENSITY_PORT,
         );
+
         bind_texture_unit(
-            primitive
-                .clearcoat
-                .as_ref()
-                .and_then(|c| c.roughness_texture),
+            cc.as_ref().and_then(|c| c.roughness_texture),
             ogl::CLEARCOAT_ROUGHNESS_PORT,
         );
 
         bind_texture_unit(
-            primitive.clearcoat.as_ref().and_then(|c| c.normal_texture),
+            cc.as_ref().and_then(|c| c.normal_texture),
             ogl::CLEARCOAT_NORMAL_PORT,
         );
 
@@ -201,33 +212,21 @@ impl Renderer {
         }
     }
 
-    fn prim_pbr_defines(prim: &Primitive) -> [PbrDefine; PbrDefine::NUM_DEFINES as usize] {
-        [
-            PbrDefine::Albedo(prim.pbr_material.base_color_texture.is_some()),
-            PbrDefine::Mr(prim.pbr_material.mr_texture.is_some()),
-            PbrDefine::Normal(prim.pbr_material.normal_texture.is_some()),
-            PbrDefine::Occlusion(prim.pbr_material.occlusion_texture.is_some()),
-            PbrDefine::Emissive(prim.pbr_material.emissive_texture.is_some()),
-            PbrDefine::Clearcoat(prim.clearcoat.is_some()),
-            PbrDefine::ClearcoatIntensity(
-                prim.clearcoat
-                    .as_ref()
-                    .and_then(|c| c.intensity_texture)
-                    .is_some(),
-            ),
-            PbrDefine::ClearcoatRoughness(
-                prim.clearcoat
-                    .as_ref()
-                    .and_then(|c| c.roughness_texture)
-                    .is_some(),
-            ),
-            PbrDefine::ClearcoatNormal(
-                prim.clearcoat
-                    .as_ref()
-                    .and_then(|c| c.normal_texture)
-                    .is_some(),
-            ),
-        ]
+    fn prim_pbr_defines(prim: &Primitive) -> PbrDefines {
+        let pbr = &prim.pbr_material;
+        let cc = prim.clearcoat.as_ref();
+
+        PbrDefines {
+            albedo_map: pbr.base_color_texture.is_some(),
+            mr_map: pbr.mr_texture.is_some(),
+            normal_map: pbr.normal_texture.is_some(),
+            occlusion_map: pbr.occlusion_texture.is_some(),
+            emissive_map: pbr.emissive_texture.is_some(),
+            clearcoat_enabled: cc.is_some(),
+            clearcoat_intensity_map: cc.and_then(|c| c.intensity_texture).is_some(),
+            clearcoat_roughness_map: cc.and_then(|c| c.roughness_texture).is_some(),
+            clearcoat_normal_map: cc.and_then(|c| c.normal_texture).is_some(),
+        }
     }
 
     fn set_material(&mut self, prim: &Primitive, appstate: &AppState) {
@@ -250,7 +249,7 @@ impl Renderer {
                 self.material.inner.clearcoat_roughness_factor = roughness_factor;
             }
 
-            if let Some(normal_scale) = prim.clearcoat.as_ref().map(|c| c.normal_texture_scale) {
+            if let Some(normal_scale) = prim.clearcoat.as_ref().map(|c| c.normal_scale) {
                 self.material.inner.clearcoat_normal_scale = normal_scale;
             }
         }
@@ -260,7 +259,7 @@ impl Renderer {
 
     fn draw_mesh(prim: &Primitive) {
         unsafe {
-            gl::BindVertexArray(prim.vao);
+            gl::BindVertexArray(prim.vao.id);
 
             gl::DrawElements(
                 gl::TRIANGLES,
@@ -300,35 +299,6 @@ impl Renderer {
 
                 Self::draw_mesh(prim);
             });
-        }
-    }
-
-    fn init_cube() -> u32 {
-        let mut vao = 0;
-        let mut ibo = 0;
-
-        unsafe {
-            gl::CreateVertexArrays(1, &mut vao);
-            ogl::attach_float_buf(vao, &ogl::CUBE_VERTICES, 3, ogl::POSITION_INDEX, gl::FLOAT);
-
-            gl::CreateBuffers(1, &mut ibo);
-            gl::NamedBufferData(
-                ibo,
-                ogl::CUBE_INDICES.len() as isize,
-                ogl::CUBE_INDICES.as_ptr() as _,
-                gl::STATIC_DRAW,
-            );
-            gl::VertexArrayElementBuffer(vao, ibo);
-        }
-
-        vao
-    }
-
-    fn draw_cube(cube_vao: u32) {
-        unsafe {
-            gl::BindVertexArray(cube_vao);
-            gl::DrawElements(gl::TRIANGLES, 36, gl::UNSIGNED_BYTE, 0 as _);
-            gl::BindVertexArray(0);
         }
     }
 }

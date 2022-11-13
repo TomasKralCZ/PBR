@@ -1,4 +1,4 @@
-use std::fs;
+use std::{collections::HashMap, fs, hash::Hash};
 
 use eyre::{Context, Result};
 
@@ -11,64 +11,53 @@ use super::Shader;
 /// also have an emissive texture).
 ///
 /// The compilation of these shaders is currently done on-demand.
-pub struct ShaderPermutations {
-    permutations: Vec<Option<Shader>>,
+pub struct ShaderPermutations<T: ShaderDefines> {
+    permutations: HashMap<T, Shader>,
     vs_src: String,
     fs_src: String,
 }
 
-impl ShaderPermutations {
-    pub fn new<T: ShaderDefines>(vs_path: &str, fs_path: &str) -> Result<Self> {
-        let mut vs_src =
+impl<T: ShaderDefines> ShaderPermutations<T> {
+    pub fn new(vs_path: &str, fs_path: &str) -> Result<Self> {
+        let vs_src =
             String::from_utf8(fs::read(vs_path).wrap_err("Couldn't load the vertex shader file")?)?;
-        let mut fs_src = String::from_utf8(
+
+        let fs_src = String::from_utf8(
             fs::read(fs_path).wrap_err("Couldn't load the fragment shader file")?,
         )?;
 
-        vs_src.push('\0');
-        fs_src.push('\0');
-
         Ok(Self {
-            permutations: vec![None; 2usize.pow(T::NUM_DEFINES)],
+            permutations: HashMap::new(),
             vs_src,
             fs_src,
         })
     }
 
-    pub fn get_shader(&mut self, defines: &[impl ShaderDefines]) -> Result<Shader> {
-        let mut index = 0;
-
-        // Get the index of the shader
-        for define in defines {
-            if define.is_active() {
-                let bit = 1 << define.rank();
-                index |= bit;
-            }
+    pub fn get_shader(&mut self, defines: T) -> Result<&Shader> {
+        if !self.permutations.contains_key(&defines) {
+            let shader = self.compile_shader(&defines)?;
+            self.permutations.insert(defines.clone(), shader);
         }
 
-        if let Some(shader) = self.permutations[index] {
-            Ok(shader)
-        } else {
-            let shader = self.compile_shader(defines)?;
-            self.permutations[index] = Some(shader);
-            Ok(shader)
-        }
+        Ok(&self.permutations.get(&defines).as_ref().unwrap())
     }
 
-    fn compile_shader(&mut self, defines: &[impl ShaderDefines]) -> Result<Shader> {
-        let defines_str: Vec<&str> = defines
-            .iter()
-            .filter(|d| d.is_active())
-            .map(|d| d.as_ref())
-            .collect();
-
-        Shader::with_src_defines(self.vs_src.clone(), &[], self.fs_src.clone(), &defines_str)
+    fn compile_shader(&mut self, defines: &T) -> Result<Shader> {
+        Shader::with_src_defines(
+            self.vs_src.clone(),
+            &defines.defines_vs(),
+            self.fs_src.clone(),
+            &defines.defines_fs(),
+        )
     }
 }
 
-pub trait ShaderDefines: AsRef<str> {
-    const NUM_DEFINES: u32;
+pub trait ShaderDefines: Eq + Hash + Clone {
+    fn defines_fs(&self) -> Vec<&str> {
+        vec![]
+    }
 
-    fn is_active(&self) -> bool;
-    fn rank(&self) -> u32;
+    fn defines_vs(&self) -> Vec<&str> {
+        vec![]
+    }
 }

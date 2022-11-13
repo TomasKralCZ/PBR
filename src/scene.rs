@@ -22,13 +22,15 @@ impl Scene {
 
         add("resources/Sphere.glb");
 
+        add("resources/shoe_with_clearcoat/shoe.gltf");
+
+        add("resources/ClearCoatTest.glb");
+
         add("resources/kasatka_71m_-_three-bolt_equipment/kasatka.gltf");
 
         add("resources/bottle/WaterBottle.gltf");
 
         add("resources/free_1975_porsche_911_930_turbo/porsche.gltf");
-
-        add("resources/shoe_with_clearcoat/shoe.gltf");
 
         add("resources/ToyCar.glb");
 
@@ -42,8 +44,6 @@ impl Scene {
         models[len - 2].transform = glam::Mat4::from_scale(Vec3::splat(3.0));
 
         models[len - 3].transform = glam::Mat4::from_scale(Vec3::splat(20.0)); */
-
-        add("resources/ClearCoatTest.glb");
 
         Ok(Self { models })
     }

@@ -1,14 +1,16 @@
 use std::{
     ffi::{c_void, CStr},
-    mem::size_of,
     ptr,
 };
 
+/// Abstraction for ordinary buffers
+pub mod gl_buffer;
 /// Abstraction for working with OpenGL Shaders.
 pub mod shader;
-
 /// Abstraction for working with OpenGL Uniform Buffers.
 pub mod uniform_buffer;
+/// Abstraction for working with VAOs
+pub mod vao;
 
 // Indices of the vertex attributes
 pub const POSITION_INDEX: u32 = 0;
@@ -40,135 +42,8 @@ pub const SETTINGS_BINDING: u32 = 3;
 pub type TextureId = u32;
 pub type ProgramId = u32;
 pub type ShaderId = u32;
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Default)]
-pub struct QuadVertex {
-    pub pos: [f32; 3],
-    pub texcoords: [f32; 2],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct CubeVertex {
-    pos: [f32; 3],
-}
-
-#[rustfmt::skip]
-pub const CUBE_VERTICES: [CubeVertex; 8] = [
-    CubeVertex{pos: [-1., -1., 1.]},
-    CubeVertex{pos: [1., -1., 1.]},
-    CubeVertex{pos: [1., 1., 1.]},
-    CubeVertex{pos: [-1., 1., 1.]},
-    CubeVertex{pos: [-1., -1., -1.]},
-    CubeVertex{pos: [1., -1., -1.]},
-    CubeVertex{pos: [1., 1., -1.]},
-    CubeVertex{pos: [-1., 1., -1.]},
-];
-
-#[rustfmt::skip]
-pub const CUBE_INDICES: [u8; 36] = [
-    0, 2, 1,
-    0, 3, 2,
-    1, 6, 5,
-    1, 2, 6,
-    5, 7, 4,
-    5, 6, 7,
-    4, 3, 0,
-    4, 7, 3,
-    3, 7, 6,
-    3, 6, 2,
-    4, 0, 1,
-    4, 1, 5,
-];
-
-/// Attach a float buffer to a VAO
-pub fn attach_float_buf<T: bytemuck::Pod + bytemuck::Zeroable>(
-    vao: u32,
-    buffer: &[T],
-    components: i32,
-    attrib_index: u32,
-    typ: u32,
-) -> u32 {
-    let mut buf_id: u32 = 0;
-
-    unsafe {
-        gl::CreateBuffers(1, &mut buf_id);
-
-        let bytes = bytemuck::cast_slice::<T, u8>(buffer);
-
-        gl::NamedBufferStorage(
-            buf_id,
-            bytes.len() as isize,
-            bytes.as_ptr() as _,
-            gl::DYNAMIC_STORAGE_BIT,
-        );
-
-        gl::BindVertexArray(vao);
-
-        // attrib_index is implicitly the same as the vertex buffer binding !
-        gl::VertexArrayVertexBuffer(vao, attrib_index, buf_id, 0, size_of::<T>() as i32);
-
-        gl::EnableVertexArrayAttrib(vao, attrib_index);
-        gl::VertexArrayAttribFormat(vao, attrib_index, components, typ, gl::FALSE, 0 as _);
-        gl::VertexArrayAttribBinding(vao, attrib_index, attrib_index);
-    }
-
-    buf_id
-}
-
-/// Create an opengl buffer with floating-point content.
-///
-/// 'buffer' is a reference to a slice of T.
-///
-/// 'components', 'attrib index' and 'typ' have the same meaning as the respective
-/// arguments in glVertexAttribPointer.
-pub fn attach_float_buf_multiple_attribs<T: bytemuck::Pod + bytemuck::Zeroable>(
-    vao: u32,
-    buffer: &[T],
-    components: &[i32],
-    attrib_indexes: &[u32],
-    types: &[u32],
-    stride: usize,
-    offsets: &[usize],
-) -> u32 {
-    let mut buf_id: u32 = 0;
-
-    unsafe {
-        gl::CreateBuffers(1, &mut buf_id);
-
-        let bytes = bytemuck::cast_slice::<T, u8>(buffer);
-
-        gl::NamedBufferStorage(
-            buf_id,
-            bytes.len() as isize,
-            bytes.as_ptr() as _,
-            gl::DYNAMIC_STORAGE_BIT,
-        );
-
-        gl::BindVertexArray(vao);
-
-        let buf_binding = 0;
-
-        gl::EnableVertexAttribArray(buf_binding);
-        gl::VertexArrayVertexBuffer(vao, buf_binding, buf_id, 0, stride as i32);
-
-        for i in 0..attrib_indexes.len() {
-            gl::EnableVertexArrayAttrib(vao, attrib_indexes[i]);
-            gl::VertexArrayAttribFormat(
-                vao,
-                attrib_indexes[i],
-                components[i],
-                types[i],
-                gl::FALSE,
-                offsets[i] as _,
-            );
-            gl::VertexArrayAttribBinding(vao, attrib_indexes[i], buf_binding);
-        }
-    }
-
-    buf_id
-}
+pub type BufferId = u32;
+pub type VaoId = u32;
 
 pub fn init_debug() {
     unsafe {

@@ -10,7 +10,7 @@ use crate::ogl::shader::Shader;
 use crate::ogl::TextureId;
 use crate::util::timed_scope;
 
-const CUBEMAP_SIZE: i32 = 1024; // SYNC this with prefilter.frag resolution !
+const CUBEMAP_SIZE: i32 = 1024; // SYNC this with prefilter.comp resolution !
 const IRRADIANCE_MAP_SIZE: i32 = 64;
 const PREFILTER_MAP_SIZE: i32 = 256;
 const PREFILTER_MAP_ROUGHNES_LEVELS: i32 = 7; // SYNC this with pbr.MAX_REFLECTION_LOD ! (minus 1)

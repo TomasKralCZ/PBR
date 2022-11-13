@@ -8,9 +8,12 @@ use gltf::{
     texture::{MagFilter, MinFilter, WrappingMode},
 };
 
-use crate::ogl::{self, TextureId};
+use crate::ogl::{self, gl_buffer::GlBuffer, vao::Vao, TextureId};
 
+mod material;
 mod tangents;
+
+use self::material::{Clearcoat, StdPbrMaterial};
 
 use super::DataBundle;
 
@@ -43,9 +46,13 @@ impl Mesh {
 /// (a collection of vertices with a specific topology like Triangles or Lines).
 pub struct Primitive {
     /// OpenGL VAO identifier
-    pub vao: u32,
-    pub indices_type: GLenum,
+    pub vao: Vao,
+
+    pub vertex_buffer: GlBuffer,
+
+    pub index_buffer: GlBuffer,
     pub num_indices: usize,
+    pub indices_type: GLenum,
 
     pub pbr_material: StdPbrMaterial,
     pub clearcoat: Option<Clearcoat>,
@@ -62,63 +69,55 @@ impl Primitive {
         let mut vertex_buf = Self::load_vertex_atrrib_buf(&primitive, bundle)?;
         let index_buf = Self::load_indices_buf(&primitive, bundle)?;
 
-        let mut prim = Self {
-            vao: 0,
-            // The type is fixed no, maybe I'll revert it to flexible type in the future
-            indices_type: gl::UNSIGNED_INT,
-            num_indices: index_buf.len(),
-            pbr_material: StdPbrMaterial::default(),
-            clearcoat: None,
-        };
+        let index_buffer = GlBuffer::new(&index_buf);
 
-        let material = primitive.material();
-        prim.load_material(&material, bundle);
+        let pbr_material = StdPbrMaterial::from_gtlf(&primitive.material(), bundle);
+        let clearcoat = primitive
+            .material()
+            .clearcoat()
+            .map(|cc| Clearcoat::from_gltf(&cc, bundle))
+            .flatten();
 
         // TODO: investigate trangent calculation condition (anisotropy as well, right ?)
-        if prim.pbr_material.normal_texture.is_some()
-            || prim
-                .clearcoat
+        if pbr_material.normal_texture.is_some()
+            || clearcoat
                 .as_ref()
                 .map(|c| c.normal_texture.is_some())
                 .unwrap_or(false)
         {
-            prim.calculate_tangents(&mut vertex_buf, &index_buf);
+            Self::calculate_tangents(&mut vertex_buf, &index_buf);
         }
 
-        prim.vao = Self::create_vao(vertex_buf, index_buf);
+        let vertex_buffer = GlBuffer::new(&vertex_buf);
+        let vao = Self::create_vao(&vertex_buffer, &index_buffer);
+
+        let prim = Self {
+            vao,
+            vertex_buffer,
+            index_buffer,
+            num_indices: index_buf.len(),
+            // The type is fixed for now, maybe I'll revert it back to a flexible type in the future
+            indices_type: gl::UNSIGNED_INT,
+            pbr_material,
+            clearcoat,
+        };
 
         Ok(prim)
     }
 
     /// Creates OpenGL buffers from the loaded vertex data
-    fn create_vao(vertex_buf: Vec<Vertex>, index_buf: Vec<u32>) -> u32 {
-        let mut ibo = 0;
-        let mut vao = 0;
+    fn create_vao(vertex_buffer: &GlBuffer, index_buffer: &GlBuffer) -> Vao {
+        let vao = Vao::new();
 
-        unsafe {
-            gl::CreateVertexArrays(1, &mut vao);
-
-            ogl::attach_float_buf_multiple_attribs(
-                vao,
-                &vertex_buf,
-                &Vertex::ATTRIB_SIZES,
-                &Vertex::ATTRIB_INDICES,
-                &Vertex::ATTRIB_TYPES,
-                size_of::<Vertex>(),
-                &Vertex::ATTRIB_OFFSETS,
-            );
-
-            // Indices
-            let indices_bytes = bytemuck::cast_slice::<u32, u8>(&index_buf);
-            gl::CreateBuffers(1, &mut ibo);
-            gl::NamedBufferStorage(
-                ibo,
-                indices_bytes.len() as isize,
-                indices_bytes.as_ptr() as _,
-                gl::DYNAMIC_STORAGE_BIT,
-            );
-            gl::VertexArrayElementBuffer(vao, ibo);
-        }
+        vao.attach_index_buffer(index_buffer);
+        vao.attach_vertex_buf_multiple_attribs(
+            vertex_buffer,
+            &Vertex::ATTRIB_SIZES,
+            &Vertex::ATTRIB_INDICES,
+            &Vertex::ATTRIB_TYPES,
+            size_of::<Vertex>(),
+            &Vertex::ATTRIB_OFFSETS,
+        );
 
         vao
     }
@@ -191,228 +190,105 @@ impl Primitive {
 
         Ok(indices)
     }
-
-    fn load_material(&mut self, material: &gltf::Material, bundle: &mut DataBundle) {
-        let pbr = material.pbr_metallic_roughness();
-
-        self.pbr_material.base_color_factor = pbr.base_color_factor();
-        if let Some(tex_info) = pbr.base_color_texture() {
-            self.pbr_material.base_color_texture =
-                Some(self.create_texture(&tex_info.texture(), bundle))
-        };
-
-        self.pbr_material.metallic_factor = pbr.metallic_factor();
-        self.pbr_material.roughness_factor = pbr.roughness_factor();
-        if let Some(tex_info) = pbr.metallic_roughness_texture() {
-            self.pbr_material.mr_texture = Some(self.create_texture(&tex_info.texture(), bundle))
-        }
-
-        if let Some(normal_tex_info) = material.normal_texture() {
-            self.pbr_material.normal_scale = normal_tex_info.scale();
-            self.pbr_material.normal_texture =
-                Some(self.create_texture(&normal_tex_info.texture(), bundle))
-        }
-
-        if let Some(occlusion_texture) = material.occlusion_texture() {
-            self.pbr_material.occlusion_strength = occlusion_texture.strength();
-            self.pbr_material.occlusion_texture =
-                Some(self.create_texture(&occlusion_texture.texture(), bundle))
-        }
-
-        self.pbr_material.emissive_factor = material.emissive_factor();
-        if let Some(tex_info) = material.emissive_texture() {
-            self.pbr_material.emissive_texture =
-                Some(self.create_texture(&tex_info.texture(), bundle))
-        }
-
-        if let Some(clearcoat) = material.clearcoat() {
-            let clearcoat_factor = clearcoat.clearcoat_factor();
-            // The clearcoat layer is disabled if clearcoat == 0.0
-            if clearcoat_factor != 0. {
-                let mut clearcoat_m = Clearcoat::default();
-
-                clearcoat_m.intensity_factor = clearcoat_factor;
-                if let Some(clearcoat_texture) = clearcoat.clearcoat_texture() {
-                    clearcoat_m.intensity_texture =
-                        Some(self.create_texture(&clearcoat_texture.texture(), bundle))
-                }
-
-                clearcoat_m.roughness_factor = clearcoat.clearcoat_roughness_factor();
-                if let Some(clearcoat_roughness_texture) = clearcoat.clearcoat_roughness_texture() {
-                    clearcoat_m.roughness_texture =
-                        Some(self.create_texture(&clearcoat_roughness_texture.texture(), bundle));
-                }
-
-                if let Some(clearcoat_normal_texture) = clearcoat.clearcoat_normal_texture() {
-                    clearcoat_m.normal_texture_scale = clearcoat_normal_texture.scale();
-                    clearcoat_m.normal_texture =
-                        Some(self.create_texture(&clearcoat_normal_texture.texture(), bundle));
-                }
-
-                self.clearcoat = Some(clearcoat_m);
-            }
-        }
-    }
-
-    /// Creates a new OpenGL texture.
-    ///
-    /// If the texture already exists (bundle.gl_textures\[texture_index\] == Some(...)),
-    /// no new texture is created, only the Texture struct is cloned.
-    fn create_texture(&mut self, tex: &gltf::Texture, bundle: &mut DataBundle) -> TextureId {
-        let tex_index = tex.source().index();
-        if let Some(texture) = bundle.gl_textures[tex_index] {
-            return texture;
-        }
-
-        let gl_tex_id = unsafe {
-            let mut texture = 0;
-            gl::CreateTextures(gl::TEXTURE_2D, 1, &mut texture);
-
-            self.set_texture_sampler(texture, &tex.sampler());
-
-            let image = &bundle.images[tex_index];
-
-            assert!(image.width.is_power_of_two());
-            assert!(image.height.is_power_of_two());
-
-            let (internal_format, format) = match image.format {
-                Format::R8 => (gl::R8, gl::RED),
-                Format::R8G8 => (gl::RG8, gl::RG),
-                Format::R8G8B8 => (gl::RGB8, gl::RGB),
-                Format::R8G8B8A8 => (gl::RGBA8, gl::RGBA),
-                f => unimplemented!("Unimplemented image format: '{f:?}'"),
-            };
-
-            let w = image.width as i32;
-            let h = image.height as i32;
-
-            let levels = 1 + f32::floor(f32::log2(i32::max(w, h) as f32)) as i32;
-            gl::TextureStorage2D(texture, levels, internal_format, w, h);
-            gl::TextureSubImage2D(
-                texture,
-                0,
-                0,
-                0,
-                w,
-                h,
-                format,
-                gl::UNSIGNED_BYTE,
-                image.pixels.as_ptr() as _,
-            );
-
-            gl::GenerateTextureMipmap(texture);
-
-            texture
-        };
-
-        bundle.gl_textures[tex_index] = Some(gl_tex_id);
-        gl_tex_id
-    }
-
-    /// Sets the appropriate sampler functions for the currently created texture.
-    fn set_texture_sampler(&self, texture: u32, sampler: &gltf::texture::Sampler) {
-        let min_filter = match sampler.min_filter() {
-            Some(min_filter) => match min_filter {
-                MinFilter::Nearest => gl::NEAREST,
-                MinFilter::Linear => gl::LINEAR,
-                MinFilter::NearestMipmapNearest => gl::NEAREST_MIPMAP_NEAREST,
-                MinFilter::LinearMipmapNearest => gl::LINEAR_MIPMAP_NEAREST,
-                MinFilter::NearestMipmapLinear => gl::NEAREST_MIPMAP_LINEAR,
-                MinFilter::LinearMipmapLinear => gl::LINEAR_MIPMAP_LINEAR,
-            },
-            None => gl::LINEAR_MIPMAP_LINEAR,
-        };
-
-        let mag_filter = match sampler.mag_filter() {
-            Some(mag_filter) => match mag_filter {
-                MagFilter::Nearest => gl::NEAREST,
-                MagFilter::Linear => gl::LINEAR,
-            },
-            None => gl::LINEAR,
-        };
-
-        unsafe {
-            gl::TextureParameteri(texture, gl::TEXTURE_MIN_FILTER, min_filter as i32);
-            gl::TextureParameteri(texture, gl::TEXTURE_MAG_FILTER, mag_filter as i32);
-        }
-
-        let wrap_s = match sampler.wrap_s() {
-            WrappingMode::ClampToEdge => gl::CLAMP_TO_EDGE,
-            WrappingMode::MirroredRepeat => gl::MIRRORED_REPEAT,
-            WrappingMode::Repeat => gl::REPEAT,
-        };
-
-        let wrap_t = match sampler.wrap_t() {
-            WrappingMode::ClampToEdge => gl::CLAMP_TO_EDGE,
-            WrappingMode::MirroredRepeat => gl::MIRRORED_REPEAT,
-            WrappingMode::Repeat => gl::REPEAT,
-        };
-
-        unsafe {
-            gl::TextureParameteri(texture, gl::TEXTURE_WRAP_S, wrap_s as i32);
-            gl::TextureParameteri(texture, gl::TEXTURE_WRAP_T, wrap_t as i32);
-        }
-    }
 }
 
-/// Standard PBR material parameters
-pub struct StdPbrMaterial {
-    pub base_color_texture: Option<TextureId>,
-    pub base_color_factor: [f32; 4],
-
-    pub mr_texture: Option<TextureId>,
-    pub metallic_factor: f32,
-    pub roughness_factor: f32,
-
-    pub normal_texture: Option<TextureId>,
-    pub normal_scale: f32,
-
-    pub occlusion_texture: Option<TextureId>,
-    pub occlusion_strength: f32,
-
-    pub emissive_texture: Option<TextureId>,
-    pub emissive_factor: [f32; 3],
-}
-
-impl Default for StdPbrMaterial {
-    fn default() -> Self {
-        Self {
-            base_color_texture: None,
-            base_color_factor: [1.; 4],
-            mr_texture: None,
-            metallic_factor: 1.,
-            roughness_factor: 1.,
-            normal_texture: None,
-            normal_scale: 1.,
-            occlusion_texture: None,
-            occlusion_strength: 1.,
-            emissive_texture: None,
-            emissive_factor: [0.; 3],
-        }
+/// Creates a new OpenGL texture.
+///
+/// If the texture already exists (bundle.gl_textures\[texture_index\] == Some(...)),
+/// no new texture is created, only the Texture struct is cloned.
+fn create_texture(tex: &gltf::Texture, bundle: &mut DataBundle) -> TextureId {
+    let tex_index = tex.source().index();
+    if let Some(texture) = bundle.gl_textures[tex_index] {
+        return texture;
     }
+
+    let gl_tex_id = unsafe {
+        let mut texture = 0;
+        gl::CreateTextures(gl::TEXTURE_2D, 1, &mut texture);
+
+        set_texture_sampler(texture, &tex.sampler());
+
+        let image = &bundle.images[tex_index];
+
+        assert!(image.width.is_power_of_two());
+        assert!(image.height.is_power_of_two());
+
+        let (internal_format, format) = match image.format {
+            Format::R8 => (gl::R8, gl::RED),
+            Format::R8G8 => (gl::RG8, gl::RG),
+            Format::R8G8B8 => (gl::RGB8, gl::RGB),
+            Format::R8G8B8A8 => (gl::RGBA8, gl::RGBA),
+            f => unimplemented!("Unimplemented image format: '{f:?}'"),
+        };
+
+        let w = image.width as i32;
+        let h = image.height as i32;
+
+        let levels = 1 + f32::floor(f32::log2(i32::max(w, h) as f32)) as i32;
+        gl::TextureStorage2D(texture, levels, internal_format, w, h);
+        gl::TextureSubImage2D(
+            texture,
+            0,
+            0,
+            0,
+            w,
+            h,
+            format,
+            gl::UNSIGNED_BYTE,
+            image.pixels.as_ptr() as _,
+        );
+
+        gl::GenerateTextureMipmap(texture);
+
+        texture
+    };
+
+    bundle.gl_textures[tex_index] = Some(gl_tex_id);
+    gl_tex_id
 }
 
-pub struct Clearcoat {
-    pub intensity_factor: f32,
-    pub intensity_texture: Option<TextureId>,
+/// Sets the appropriate sampler functions for the currently created texture.
+fn set_texture_sampler(texture: u32, sampler: &gltf::texture::Sampler) {
+    let min_filter = match sampler.min_filter() {
+        Some(min_filter) => match min_filter {
+            MinFilter::Nearest => gl::NEAREST,
+            MinFilter::Linear => gl::LINEAR,
+            MinFilter::NearestMipmapNearest => gl::NEAREST_MIPMAP_NEAREST,
+            MinFilter::LinearMipmapNearest => gl::LINEAR_MIPMAP_NEAREST,
+            MinFilter::NearestMipmapLinear => gl::NEAREST_MIPMAP_LINEAR,
+            MinFilter::LinearMipmapLinear => gl::LINEAR_MIPMAP_LINEAR,
+        },
+        None => gl::LINEAR_MIPMAP_LINEAR,
+    };
 
-    pub roughness_factor: f32,
-    pub roughness_texture: Option<TextureId>,
+    let mag_filter = match sampler.mag_filter() {
+        Some(mag_filter) => match mag_filter {
+            MagFilter::Nearest => gl::NEAREST,
+            MagFilter::Linear => gl::LINEAR,
+        },
+        None => gl::LINEAR,
+    };
 
-    pub normal_texture: Option<TextureId>,
-    pub normal_texture_scale: f32,
-}
+    unsafe {
+        gl::TextureParameteri(texture, gl::TEXTURE_MIN_FILTER, min_filter as i32);
+        gl::TextureParameteri(texture, gl::TEXTURE_MAG_FILTER, mag_filter as i32);
+    }
 
-impl Default for Clearcoat {
-    fn default() -> Self {
-        Self {
-            intensity_factor: 0.,
-            intensity_texture: None,
-            roughness_factor: 0.,
-            roughness_texture: None,
-            normal_texture: None,
-            normal_texture_scale: 1.,
-        }
+    let wrap_s = match sampler.wrap_s() {
+        WrappingMode::ClampToEdge => gl::CLAMP_TO_EDGE,
+        WrappingMode::MirroredRepeat => gl::MIRRORED_REPEAT,
+        WrappingMode::Repeat => gl::REPEAT,
+    };
+
+    let wrap_t = match sampler.wrap_t() {
+        WrappingMode::ClampToEdge => gl::CLAMP_TO_EDGE,
+        WrappingMode::MirroredRepeat => gl::MIRRORED_REPEAT,
+        WrappingMode::Repeat => gl::REPEAT,
+    };
+
+    unsafe {
+        gl::TextureParameteri(texture, gl::TEXTURE_WRAP_S, wrap_s as i32);
+        gl::TextureParameteri(texture, gl::TEXTURE_WRAP_T, wrap_t as i32);
     }
 }
 

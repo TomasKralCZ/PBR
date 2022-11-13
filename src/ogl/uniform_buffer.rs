@@ -84,3 +84,11 @@ pub trait UniformBufferElement:
         }
     }
 }
+
+impl<T: UniformBufferElement> Drop for UniformBuffer<T> {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteBuffers(1, &self.id);
+        }
+    }
+}

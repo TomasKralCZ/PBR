@@ -5,79 +5,58 @@ use crate::ogl::shader::{
 use eyre::Result;
 
 pub struct Shaders {
-    pub pbr: ShaderPermutations,
+    pub pbr_shaders: ShaderPermutations<PbrDefines>,
     pub light_shader: Shader,
     pub cubemap_shader: Shader,
 }
 
-pub enum PbrDefine {
-    Albedo(bool),
-    Mr(bool),
-    Normal(bool),
-    Occlusion(bool),
-    Emissive(bool),
-    Clearcoat(bool),
-    ClearcoatIntensity(bool),
-    ClearcoatRoughness(bool),
-    ClearcoatNormal(bool),
+#[derive(PartialEq, Eq, Hash, Clone)]
+pub struct PbrDefines {
+    pub albedo_map: bool,
+    pub mr_map: bool,
+    pub normal_map: bool,
+    pub occlusion_map: bool,
+    pub emissive_map: bool,
+    pub clearcoat_enabled: bool,
+    pub clearcoat_intensity_map: bool,
+    pub clearcoat_roughness_map: bool,
+    pub clearcoat_normal_map: bool,
 }
 
-impl AsRef<str> for PbrDefine {
-    fn as_ref(&self) -> &str {
-        match self {
-            PbrDefine::Albedo(_) => "ALBEDO_MAP",
-            PbrDefine::Mr(_) => "MR_MAP",
-            PbrDefine::Normal(_) => "NORMAL_MAP",
-            PbrDefine::Occlusion(_) => "OCCLUSION_MAP",
-            PbrDefine::Emissive(_) => "EMISSIVE_MAP",
-            PbrDefine::Clearcoat(_) => "CLEARCOAT",
-            PbrDefine::ClearcoatIntensity(_) => "CLEARCOAT_INTENSITY_MAP",
-            PbrDefine::ClearcoatRoughness(_) => "CLEARCOAT_ROUGHNESS_MAP",
-            PbrDefine::ClearcoatNormal(_) => "CLEARCOAT_NORMAL_MAP",
-        }
-    }
-}
+impl ShaderDefines for PbrDefines {
+    fn defines_fs(&self) -> Vec<&str> {
+        let mut defines = Vec::new();
 
-impl ShaderDefines for PbrDefine {
-    const NUM_DEFINES: u32 = 9;
+        let fiels_defines = [
+            (self.albedo_map, "ALBEDO_MAP"),
+            (self.mr_map, "MR_MAP"),
+            (self.normal_map, "NORMAL_MAP"),
+            (self.occlusion_map, "OCCLUSION_MAP"),
+            (self.emissive_map, "EMISSIVE_MAP"),
+            (self.clearcoat_enabled, "CLEARCOAT"),
+            (self.clearcoat_intensity_map, "CLEARCOAT_INTENSITY_MAP"),
+            (self.clearcoat_roughness_map, "CLEARCOAT_ROUGHNESS_MAP"),
+            (self.clearcoat_normal_map, "CLEARCOAT_NORMAL_MAP"),
+        ];
 
-    fn is_active(&self) -> bool {
-        match self {
-            PbrDefine::Albedo(active) => *active,
-            PbrDefine::Mr(active) => *active,
-            PbrDefine::Normal(active) => *active,
-            PbrDefine::Occlusion(active) => *active,
-            PbrDefine::Emissive(active) => *active,
-            PbrDefine::Clearcoat(active) => *active,
-            PbrDefine::ClearcoatIntensity(active) => *active,
-            PbrDefine::ClearcoatRoughness(active) => *active,
-            PbrDefine::ClearcoatNormal(active) => *active,
+        for (field, define) in fiels_defines {
+            if field {
+                defines.push(define);
+            }
         }
-    }
 
-    fn rank(&self) -> u32 {
-        match self {
-            PbrDefine::Albedo(_) => 0,
-            PbrDefine::Mr(_) => 1,
-            PbrDefine::Normal(_) => 2,
-            PbrDefine::Occlusion(_) => 3,
-            PbrDefine::Emissive(_) => 4,
-            PbrDefine::Clearcoat(_) => 5,
-            PbrDefine::ClearcoatIntensity(_) => 6,
-            PbrDefine::ClearcoatRoughness(_) => 7,
-            PbrDefine::ClearcoatNormal(_) => 8,
-        }
+        defines
     }
 }
 
 impl Shaders {
     pub fn new() -> Result<Self> {
-        let pbr = ShaderPermutations::new::<PbrDefine>("shaders/basic.vert", "shaders/pbr.frag")?;
+        let pbr = ShaderPermutations::new("shaders/basic.vert", "shaders/pbr.frag")?;
         let light_shader = Shader::with_files("shaders/basic.vert", "shaders/light.frag")?;
         let cubemap_shader = Shader::with_files("shaders/cubemap.vert", "shaders/cubemap.frag")?;
 
         Ok(Self {
-            pbr,
+            pbr_shaders: pbr,
             light_shader,
             cubemap_shader,
         })

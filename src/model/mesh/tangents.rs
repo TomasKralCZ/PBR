@@ -4,7 +4,7 @@ use super::{Primitive, Vertex};
 
 impl Primitive {
     /// Inspired by http://foundationsofgameenginedev.com/FGED2-sample.pdf
-    pub(super) fn calculate_tangents(&mut self, vertex_buf: &mut Vec<Vertex>, index_buf: &[u32]) {
+    pub(super) fn calculate_tangents(vertex_buf: &mut Vec<Vertex>, index_buf: &[u32]) {
         // Tangents are already stored in the vertex buffer
         let mut bitagents: Vec<[f32; 3]> = vec![[0.; 3]; vertex_buf.len()];
         let mut counts: Vec<u32> = vec![0; vertex_buf.len()];
@@ -39,15 +39,13 @@ impl Primitive {
             let mut t = (e1 * dy2 - e2 * dy1) * r;
             let mut b = (e2 * dx1 - e1 * dx2) * r;
 
-            // FIXME: tangents nan and infinite... maybe degenerate triangles ?
+            // TODO: tangents nan and infinite... maybe degenerate triangles ?
             if !t.is_finite() {
-                eprintln!("t not finite");
-                t = Vec3::new(1., 1., 1.);
+                t = Vec3::new(0., 0., 1.);
             }
 
             if !b.is_finite() {
-                eprintln!("b not finite");
-                b = Vec3::new(1., 1., 1.);
+                b = Vec3::new(0., 0., 1.);
             }
 
             vertex_buf[i0].tangent[0] += t[0];
