@@ -17,6 +17,8 @@ sdl2 = "0.35"
 egui = "0.16"
 egui_sdl2_gl = "0.16.0"
 
+cstr = "0.2.11"
+
 # For clearcoat extension
 [patch.crates-io]
 gltf = { path = "../gltf" }

@@ -38,6 +38,8 @@ pub const LIGHTNING_BINDING: u32 = 2;
 pub const SETTINGS_BINDING: u32 = 3;
 
 pub type TextureId = u32;
+pub type ProgramId = u32;
+pub type ShaderId = u32;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable, Default)]

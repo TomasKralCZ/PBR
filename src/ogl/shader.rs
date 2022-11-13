@@ -1,12 +1,11 @@
 use eyre::{eyre, Context, Result};
 use gl::types::GLenum;
 use glam::{Mat4, Vec3, Vec4};
-use std::{fs, ptr};
+use std::{ffi::CStr, fs, ptr};
 
-pub mod compute_shader;
+use super::{ProgramId, ShaderId};
+
 pub mod shader_permutations;
-
-type ShaderId = u32;
 
 /// Represents an OpenGL shader.
 ///
@@ -15,19 +14,19 @@ type ShaderId = u32;
 /// Use the `draw_with` method for draw calls.
 #[derive(Clone, Copy)]
 pub struct Shader {
-    pub shader_id: ShaderId,
+    pub program_id: ProgramId,
 }
 
 impl Shader {
     /// Use this shader to render.
     ///
-    /// Draw calls should be passed using the `render` function parameter.
-    pub fn draw_with<F>(&self, render: F)
+    /// Draw calls or compute dispatch should be done in the `render` function parameter.
+    pub fn use_shader<F>(&self, render: F)
     where
         F: FnOnce(),
     {
         unsafe {
-            gl::UseProgram(self.shader_id);
+            gl::UseProgram(self.program_id);
 
             render();
 
@@ -35,7 +34,7 @@ impl Shader {
         }
     }
 
-    /// Loads a vertex shader and a fragment shader from specified paths and tries to create a shader program
+    /// Loads a vertex shader and a fragment shader from specified paths and tries to create a shader program.
     pub fn with_files(vs_path: &str, fs_path: &str) -> Result<Shader> {
         let mut vs_src =
             String::from_utf8(fs::read(vs_path).wrap_err("Couldn't load the vertex shader file")?)?;
@@ -50,35 +49,50 @@ impl Shader {
         Self::with_src_defines(vs_src, &[], fs_src, &[])
     }
 
-    /// Loads a vertex shader and a fragment shader from specified paths and tries to create a shader program
+    /// Tries to compile vertex and fragment shaders from respective paths with respective defines and
+    /// create a shader program from them.
     pub fn with_src_defines(
         mut vs_src: String,
         vs_defines: &[&str],
         mut fs_src: String,
         fs_defines: &[&str],
     ) -> Result<Shader> {
-        Self::handle_imports(&mut vs_src)?;
-        Self::handle_imports(&mut fs_src)?;
+        let vs = Self::compile_shader(&mut vs_src, vs_defines, gl::VERTEX_SHADER)?;
+        let fs = Self::compile_shader(&mut fs_src, fs_defines, gl::FRAGMENT_SHADER)?;
 
-        if !vs_defines.is_empty() {
-            Self::handle_defines(&mut vs_src, vs_defines)?;
+        let program_id = Self::create_shader_program(&[vs, fs])?;
+        Ok(Shader { program_id })
+    }
+
+    /// Creates a new compute shader from the path
+    pub fn comp_with_path(comp_path: &str) -> Result<Self> {
+        let mut comp_src = String::from_utf8(
+            fs::read(comp_path).wrap_err("Couldn't load the compute shader file")?,
+        )?;
+
+        // Add null terminator !
+        comp_src.push('\0');
+
+        let cs = Self::compile_shader(&mut comp_src, &[], gl::COMPUTE_SHADER)?;
+        let program_id = Self::create_shader_program(&[cs])?;
+
+        Ok(Self { program_id })
+    }
+
+    fn compile_shader(src: &mut String, defines: &[&str], typ: GLenum) -> Result<ShaderId> {
+        // Preprocessing steps
+        Self::handle_imports(src)?;
+
+        if !defines.is_empty() {
+            Self::handle_defines(src, defines)?;
         }
 
-        if !fs_defines.is_empty() {
-            Self::handle_defines(&mut fs_src, fs_defines)?;
-        }
-
-        let vs = Self::compile_shader(vs_src.as_bytes(), gl::VERTEX_SHADER)
-            .wrap_err_with(|| format!("Error compiling shader, defines: '{:?}'", fs_defines))?;
-        let fs = Self::compile_shader(fs_src.as_bytes(), gl::FRAGMENT_SHADER)
-            .wrap_err_with(|| format!("Error compiling shader, defines: '{:?}'", fs_defines))?;
-
-        let shader_id = Self::link_shaders(vs, fs)?;
-        Ok(Shader { shader_id })
+        Self::compile_shader_glsl(src.as_bytes(), typ)
+            .wrap_err_with(|| format!("Error compiling shader, defines: '{:?}'", defines))
     }
 
     /// Tries to compile a shader and checks for compilation errors.
-    fn compile_shader(src: &[u8], typ: GLenum) -> Result<u32> {
+    fn compile_shader_glsl(src: &[u8], typ: GLenum) -> Result<u32> {
         unsafe {
             let shader = gl::CreateShader(typ);
             gl::ShaderSource(shader, 1, &(src.as_ptr() as _), ptr::null_mut());
@@ -105,24 +119,27 @@ impl Shader {
         }
     }
 
-    /// Tries to link the vertex and fragment shaders (passed by their ids) and checks for linking errors.
-    fn link_shaders(vs: ShaderId, fs: ShaderId) -> Result<ShaderId> {
+    /// Tries to create a shader program and then checks for linking errors.
+    fn create_shader_program(shader_ids: &[ShaderId]) -> Result<ProgramId> {
         unsafe {
             let shader_program = gl::CreateProgram();
-            gl::AttachShader(shader_program, vs);
-            gl::AttachShader(shader_program, fs);
+            for sid in shader_ids {
+                gl::AttachShader(shader_program, *sid);
+            }
+
             gl::LinkProgram(shader_program);
 
             Self::check_shader_program_errors(shader_program)?;
 
-            gl::DeleteShader(vs);
-            gl::DeleteShader(fs);
+            for sid in shader_ids {
+                gl::DeleteShader(*sid);
+            }
 
             Ok(shader_program)
         }
     }
 
-    fn check_shader_program_errors(shader_program: ShaderId) -> Result<()> {
+    fn check_shader_program_errors(shader_program: ProgramId) -> Result<()> {
         let mut res = 0;
         let mut info_log = [0u8; 512];
         let mut info_len = 0;
@@ -181,75 +198,66 @@ impl Shader {
     //
 
     #[allow(unused)]
-    pub fn set_mat4(&self, mat: Mat4, name: &str) {
-        Self::check_uniform_name(name);
+    pub fn set_mat4(&self, mat: Mat4, name: &CStr) {
         unsafe {
-            let loc = gl::GetUniformLocation(self.shader_id, name.as_ptr() as _);
+            let loc = gl::GetUniformLocation(self.program_id, name.as_ptr() as _);
             gl::UniformMatrix4fv(loc, 1, gl::FALSE, mat.to_cols_array().as_ptr() as _);
         }
     }
 
     #[allow(unused)]
-    pub fn set_mat4_arr(&self, mats: &[Mat4], name: &str) {
-        Self::check_uniform_name(name);
-
+    pub fn set_mat4_arr(&self, mats: &[Mat4], name: &CStr) {
         let mats_flat: Vec<f32> = mats.iter().flat_map(|m| m.to_cols_array()).collect();
 
         unsafe {
-            let loc = gl::GetUniformLocation(self.shader_id, name.as_ptr() as _);
+            let loc = gl::GetUniformLocation(self.program_id, name.as_ptr() as _);
             gl::UniformMatrix4fv(loc, mats.len() as i32, gl::FALSE, mats_flat.as_ptr() as _);
         }
     }
 
     #[allow(unused)]
-    pub fn set_vec3(&self, vec: Vec3, name: &str) {
-        Self::check_uniform_name(name);
+    pub fn set_vec3(&self, vec: Vec3, name: &CStr) {
         unsafe {
-            let loc = gl::GetUniformLocation(self.shader_id, name.as_ptr() as _);
+            let loc = gl::GetUniformLocation(self.program_id, name.as_ptr() as _);
             gl::Uniform3f(loc, vec.x, vec.y, vec.z);
         }
     }
 
     #[allow(unused)]
-    pub fn set_vec4(&self, vec: Vec4, name: &str) {
-        Self::check_uniform_name(name);
+    pub fn set_vec4(&self, vec: Vec4, name: &CStr) {
         unsafe {
-            let loc = gl::GetUniformLocation(self.shader_id, name.as_ptr() as _);
+            let loc = gl::GetUniformLocation(self.program_id, name.as_ptr() as _);
             gl::Uniform4f(loc, vec.x, vec.y, vec.z, vec.w);
         }
     }
 
     #[allow(unused)]
-    pub fn set_f32(&self, v: f32, name: &str) {
-        Self::check_uniform_name(name);
+    pub fn set_f32(&self, v: f32, name: &CStr) {
         unsafe {
-            let loc = gl::GetUniformLocation(self.shader_id, name.as_ptr() as _);
+            let loc = gl::GetUniformLocation(self.program_id, name.as_ptr() as _);
             gl::Uniform1f(loc, v);
         }
     }
 
     #[allow(unused)]
-    pub fn set_u32(&self, v: u32, name: &str) {
-        Self::check_uniform_name(name);
+    pub fn set_u32(&self, v: u32, name: &CStr) {
         unsafe {
-            let loc = gl::GetUniformLocation(self.shader_id, name.as_ptr() as _);
+            let loc = gl::GetUniformLocation(self.program_id, name.as_ptr() as _);
             gl::Uniform1ui(loc, v);
         }
     }
 
     #[allow(unused)]
-    pub fn set_i32(&self, v: i32, name: &str) {
-        Self::check_uniform_name(name);
+    pub fn set_i32(&self, v: i32, name: &CStr) {
         unsafe {
-            let loc = gl::GetUniformLocation(self.shader_id, name.as_ptr() as _);
+            let loc = gl::GetUniformLocation(self.program_id, name.as_ptr() as _);
             gl::Uniform1i(loc, v);
         }
     }
+}
 
-    // TODO: use cstr!() macro...
-    /// Uniform names have to be null-terminated and have to be ASCII (I think...)
-    fn check_uniform_name(name: &str) {
-        assert!(name.is_ascii());
-        assert!(name.ends_with('\0'));
+impl Drop for Shader {
+    fn drop(&mut self) {
+        unsafe { gl::DeleteProgram(self.program_id) }
     }
 }

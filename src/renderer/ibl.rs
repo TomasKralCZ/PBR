@@ -1,12 +1,12 @@
 use std::{fs::File, io::BufReader};
 
+use cstr::cstr;
 use eyre::Result;
 
 use gl::types::GLenum;
 use image::codecs::hdr;
 
-use crate::ogl::shader::compute_shader::ComputeShader;
-
+use crate::ogl::shader::Shader;
 use crate::ogl::TextureId;
 use crate::util::timed_scope;
 
@@ -51,9 +51,9 @@ impl Probe {
     /// Converts an HDR equirectangular map to a cubemap
     fn equi_to_cubemap(equi_tex_id: u32) -> Result<u32, eyre::ErrReport> {
         let cubemap_tex_id = Self::create_cubemap_texture(CUBEMAP_SIZE, gl::RGBA32F);
-        let equi_to_cubemap_shader = ComputeShader::with_path("shaders/ibl/equi_to_cubemap.comp")?;
+        let equi_to_cubemap_shader = Shader::comp_with_path("shaders/ibl/equi_to_cubemap.comp")?;
 
-        equi_to_cubemap_shader._use(|| unsafe {
+        equi_to_cubemap_shader.use_shader(|| unsafe {
             gl::BindTextureUnit(0, equi_tex_id);
             gl::BindImageTexture(
                 1,
@@ -67,6 +67,8 @@ impl Probe {
 
             gl::DispatchCompute(CUBEMAP_SIZE as _, CUBEMAP_SIZE as _, CUBEMAP_FACES);
             gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+            gl::GenerateTextureMipmap(cubemap_tex_id);
         });
 
         Ok(cubemap_tex_id)
@@ -75,9 +77,9 @@ impl Probe {
     /// Computes the diffuse irradiance map from the cubemap
     fn compute_irradiance_map(cubemap_tex_id: u32) -> Result<u32, eyre::ErrReport> {
         let irradiance_tex_id = Self::create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F);
-        let irradiance_shader = ComputeShader::with_path("shaders/ibl/irradiance.comp")?;
+        let irradiance_shader = Shader::comp_with_path("shaders/ibl/irradiance.comp")?;
 
-        irradiance_shader._use(|| unsafe {
+        irradiance_shader.use_shader(|| unsafe {
             gl::BindTextureUnit(0, cubemap_tex_id);
             gl::BindImageTexture(
                 1,
@@ -115,10 +117,9 @@ impl Probe {
             gl::TextureParameteri(brdf_lut_id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
         };
 
-        let brdf_integration_shader =
-            ComputeShader::with_path("shaders/ibl/brdf_integration.comp")?;
+        let brdf_integration_shader = Shader::comp_with_path("shaders/ibl/brdf_integration.comp")?;
 
-        brdf_integration_shader._use(|| unsafe {
+        brdf_integration_shader.use_shader(|| unsafe {
             gl::BindImageTexture(0, brdf_lut_id, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::RG32F);
 
             gl::DispatchCompute(BRDF_LUT_SIZE as _, BRDF_LUT_SIZE as _, 1);
@@ -148,13 +149,13 @@ impl Probe {
             gl::TextureParameteri(prefilter_tex_id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
         }
 
-        let prefilter_shader = ComputeShader::with_path("shaders/ibl/prefilter.comp")?;
-        prefilter_shader._use(|| unsafe {
+        let prefilter_shader = Shader::comp_with_path("shaders/ibl/prefilter.comp")?;
+        prefilter_shader.use_shader(|| unsafe {
             gl::BindTextureUnit(0, cubemap_tex_id);
 
             for lod in 0..PREFILTER_MAP_ROUGHNES_LEVELS {
                 let roughness = lod as f32 / (PREFILTER_MAP_ROUGHNES_LEVELS as f32 - 1.);
-                prefilter_shader.set_f32(roughness, "roughness\0");
+                prefilter_shader.set_f32(roughness, cstr!("roughness"));
 
                 gl::BindImageTexture(
                     1,

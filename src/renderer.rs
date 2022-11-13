@@ -1,3 +1,4 @@
+use cstr::cstr;
 use eyre::Result;
 use glam::{Mat4, Vec3};
 
@@ -84,7 +85,7 @@ impl Renderer {
         let transform = model.transform;
         self.render_node(&model.root, transform, appstate);
 
-        self.shaders.cubemap_shader.draw_with(|| unsafe {
+        self.shaders.cubemap_shader.use_shader(|| unsafe {
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_CUBE_MAP, self.probe.cubemap_tex_id);
 
@@ -149,7 +150,7 @@ impl Renderer {
                 .get_shader(&defines)
                 .expect("Error getting a shader");
 
-            shader.draw_with(|| {
+            shader.use_shader(|| {
                 Self::draw_mesh(primitive);
             })
         }
@@ -288,14 +289,14 @@ impl Renderer {
             .zip(lighting.light_color)
             .take(num_lights as usize)
         {
-            self.shaders.light_shader.draw_with(|| {
+            self.shaders.light_shader.use_shader(|| {
                 self.transforms.inner.model = Mat4::from_translation(light_pos.truncate())
                     * Mat4::from_scale(Vec3::splat(0.1));
                 self.transforms.update();
 
                 self.shaders
                     .light_shader
-                    .set_vec3(light_color.truncate(), "lightColor\0");
+                    .set_vec3(light_color.truncate(), cstr!("lightColor"));
 
                 Self::draw_mesh(prim);
             });
