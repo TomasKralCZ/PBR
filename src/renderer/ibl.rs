@@ -155,7 +155,7 @@ impl Probe {
 
             for lod in 0..PREFILTER_MAP_ROUGHNES_LEVELS {
                 let roughness = lod as f32 / (PREFILTER_MAP_ROUGHNES_LEVELS as f32 - 1.);
-                prefilter_shader.set_f32(roughness, cstr!("roughness"));
+                prefilter_shader.set_f32(roughness, cstr!("perceptualRoughness"));
 
                 gl::BindImageTexture(
                     1,

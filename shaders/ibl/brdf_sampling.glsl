@@ -1,6 +1,4 @@
 
-const float PI = 3.14159265359;
-
 // Based on http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
 float radicalInverseVdC(uint bits)
 {
@@ -18,7 +16,6 @@ vec2 hammersley(uint i, uint N)
     return vec2(float(i) / float(N), radicalInverseVdC(i));
 }
 
-// TODO: Eric Heitz - A Simpler and Exact Sampling Routine for the GGX Distribution of Visible Normals
 vec3 importanceSampleGgx(vec2 Xi, vec3 N, float roughness)
 {
     float a = roughness * roughness;

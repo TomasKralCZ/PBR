@@ -2,7 +2,9 @@
 
 //#defines
 
+//#import shaders/consts.glsl
 //#import shaders/tools/tonemap.glsl
+//#import shaders/brdf.glsl
 
 in VsOut
 {
@@ -58,6 +60,10 @@ layout(binding = 6) uniform sampler2D clearcoatRoughnessTex;
 layout(binding = 7) uniform sampler2D clearcoatNormalTex;
 #endif
 
+layout(binding = 8) uniform samplerCube irradianceMap;
+layout(binding = 9) uniform samplerCube prefilterMap;
+layout(binding = 10) uniform sampler2D brdfLut;
+
 layout(std140, binding = 2) uniform Lighting
 {
     uniform vec4 lightPositions[4];
@@ -66,23 +72,12 @@ layout(std140, binding = 2) uniform Lighting
     uniform uint lights;
 };
 
-layout(binding = 8) uniform samplerCube irradianceMap;
-layout(binding = 9) uniform samplerCube prefilterMap;
-layout(binding = 10) uniform sampler2D brdfLut;
-
 layout(std140, binding = 3) uniform Settings
 {
     uniform bool clearcoatEnabled;
     uniform bool directLightEnabled;
     uniform bool IBLEnabled;
 };
-
-const float PI = 3.14159265359;
-const float ROUGHNESS_MIN = 0.0001;
-
-const float GAMMA = 2.2;
-
-const float DIELECTRIC_FRESNEL = 0.04;
 
 // Parameters that stay same for the whole pixel
 struct ShadingParams {
@@ -117,83 +112,6 @@ vec3 getNormalFromMap(sampler2D tex, float scaleNormal, vec3 viewDir)
 }
 #endif
 
-vec3 fresnelSchlick(vec3 f0, float VoH)
-{
-    return f0 + (1. - f0) * pow(clamp(1. - VoH, 0.0, 1.0), 5.);
-}
-
-float fresnelSchlick(float f0, float VoH)
-{
-    return f0 + (1. - f0) * pow(clamp(1. - VoH, 0.0, 1.0), 5.);
-}
-
-vec3 fresnelSchlickRoughness(float VoH, vec3 f0, float roughness)
-{
-    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - VoH, 0.0, 1.0), 5.0);
-}
-
-// GGX / Trowbridge-Reitz
-float normalDistribution(float NoH, float roughness)
-{
-    float asq = roughness * roughness;
-    float denom = (NoH * NoH) * (asq - 1.) + 1.;
-
-    return (asq) / (PI * denom * denom);
-}
-
-#ifdef ANISOTROPY
-// Burley, “Physically-Based Shading at Disney.”
-float anisotropicGgxDistribution(ShadingParams sp, float NoH, vec3 halfway)
-{
-    // Remapping from: Kulla and Conty, “Revisiting Physically Based Shading at Imageworks.”
-    float tRoughness = max(sp.roughness * (1.0 + anisotropy), ROUGHNESS_MIN);
-    float bRoughness = max(sp.roughness * (1.0 - anisotropy), ROUGHNESS_MIN);
-
-    float ToH = dot(vsOut.tangent, halfway);
-    float BoH = dot(vsOut.bitangent, halfway);
-
-    float denom = ((ToH * ToH) / (tRoughness * tRoughness))
-        + ((BoH * BoH) / (bRoughness * bRoughness))
-        + (NoH * NoH);
-
-    denom = denom * denom;
-
-    return (1.0 / (PI * tRoughness * bRoughness)) * (1.0 / denom);
-}
-
-// Taken from: Guy and Agopian, “Physically Based Rendering in Filament.”
-float anisotropicVSmithGgxCorrelated(ShadingParams sp, float ToV, float BoV, float ToL, float BoL, float NoL)
-{
-    // Remapping from: Kulla and Conty, “Revisiting Physically Based Shading at Imageworks.”
-    float tRoughness = max(sp.roughness * (1.0 + anisotropy), ROUGHNESS_MIN);
-    float bRoughness = max(sp.roughness * (1.0 - anisotropy), ROUGHNESS_MIN);
-
-    float lambdaV = NoL * length(vec3(tRoughness * ToV, bRoughness * BoV, sp.NoV));
-    float lambdaL = sp.NoV * length(vec3(tRoughness * ToL, bRoughness * BoL, NoL));
-
-    float v = 0.5 / (lambdaV + lambdaL);
-    return v;
-}
-#endif
-
-float geometryGgx(float ndv, float roughness)
-{
-    float asq = roughness * roughness;
-
-    float denom = ndv + sqrt(asq + ((1 - asq) * (ndv * ndv)));
-
-    return (2 * ndv) / denom;
-}
-
-// Smith
-float geometryShadowing(float NoV, float NoL, float roughness)
-{
-    float ggx2 = geometryGgx(NoV, roughness);
-    float ggx1 = geometryGgx(NoL, roughness);
-
-    return ggx1 * ggx2;
-}
-
 #ifdef CLEARCOAT
 vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway,
     vec3 lightDir, float VoH)
@@ -202,12 +120,12 @@ vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway,
     float clearcoatNoL = max(dot(lightDir, sp.clearcoatNormal), 0.0);
 
     // clearcoat BRDF
-    float normalDistribution = normalDistribution(clearcoatNoH, sp.clearcoatRoughness);
-    float geometry = geometryShadowing(sp.clearcoatNoV, clearcoatNoL, sp.clearcoatRoughness);
+    float N = ggxDistribution(clearcoatNoH, sp.clearcoatRoughness);
+    float G = smithGeometryShadowing(sp.clearcoatNoV, clearcoatNoL, sp.clearcoatRoughness);
     // Coating IOR is 1.5 (f0 == 0.04) - equivalent to polyurethane
     fresnel = fresnelSchlick(DIELECTRIC_FRESNEL, VoH) * sp.clearcoatIntensity;
 
-    vec3 numerator = normalDistribution * geometry * vec3(fresnel);
+    vec3 numerator = N * G * vec3(fresnel);
     float denominator = 4.0 * sp.clearcoatNoV * clearcoatNoL;
     // + 0.0001 to prevent divide by zero
     vec3 specular = numerator / (denominator + 0.0001);
@@ -220,7 +138,7 @@ vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway,
 void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 fresnel, float NoH, float NoL,
     float VoH, vec3 halfway, vec3 lightDir)
 {
-    float D = anisotropicGgxDistribution(sp, NoH, halfway);
+    float D = anisotropicGgxDistribution(sp.roughness, NoH, halfway, vsOut.tangent, vsOut.bitangent, anisotropy);
 
     float ToV = dot(vsOut.tangent, sp.viewDir);
     float BoV = dot(vsOut.bitangent, sp.viewDir);
@@ -228,7 +146,7 @@ void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 f
     float BoL = dot(vsOut.bitangent, lightDir);
 
     // Visibility term (G divided with denominator)
-    float V = anisotropicVSmithGgxCorrelated(sp, ToV, BoV, ToL, BoL, NoL);
+    float V = anisotropicVSmithGgxCorrelated(sp.roughness, sp.NoV, ToV, BoV, ToL, BoL, NoL, anisotropy);
 
     fresnel = fresnelSchlick(sp.f0, VoH);
     specular = D * V * fresnel;
@@ -238,11 +156,11 @@ void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 f
 void baseSpecularIsotropic(ShadingParams sp, inout vec3 specular, inout vec3 fresnel, float NoH,
     float NoL, float VoH)
 {
-    float normalDistribution = normalDistribution(NoH, sp.roughness);
-    float geometry = geometryShadowing(sp.NoV, NoL, sp.roughness);
+    float D = ggxDistribution(NoH, sp.roughness);
+    float G = smithGeometryShadowing(sp.NoV, NoL, sp.roughness);
     fresnel = fresnelSchlick(sp.f0, VoH);
 
-    vec3 numerator = normalDistribution * geometry * fresnel;
+    vec3 numerator = D * G * fresnel;
     float denominator = 4.0 * sp.NoV * NoL;
     // + 0.0001 to prevent divide by zero
     specular = numerator / (denominator + 0.0001);
@@ -255,7 +173,7 @@ vec3 calculateDirectLighting(ShadingParams sp)
     for (int i = 0; i < lights; i++) {
         vec3 lightDir = normalize(lightPositions[i].xyz - vsOut.fragPos);
         vec3 halfway = normalize(sp.viewDir + lightDir);
-        float VoH = max(dot(halfway, sp.viewDir), 0.);
+        float VoH = max(dot(halfway, sp.viewDir), 0.0);
         float NoH = max(dot(sp.normal, halfway), 0.0);
         float NoL = max(dot(sp.normal, lightDir), 0.0);
 
@@ -309,7 +227,7 @@ vec3 calculateIBL(ShadingParams sp)
     vec3 iblDiffuse = irradiance * sp.albedo.rgb;
 
 #ifdef ANISOTROPY
-    // https://google.github.io/filament/Filament.html#lighting/imagebasedlights/anisotropy
+    // Taken from: Guy and Agopian, “Physically Based Rendering in Filament.”
     // Based on
     // McAuley: Rendering the World of Far Cry 4.
     vec3 anisotropicDirection = anisotropy >= 0.0 ? vsOut.bitangent : vsOut.tangent;
