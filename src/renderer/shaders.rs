@@ -17,10 +17,13 @@ pub struct PbrDefines {
     pub normal_map: bool,
     pub occlusion_map: bool,
     pub emissive_map: bool,
+
     pub clearcoat_enabled: bool,
     pub clearcoat_intensity_map: bool,
     pub clearcoat_roughness_map: bool,
     pub clearcoat_normal_map: bool,
+
+    pub anisotropy_enabled: bool,
 }
 
 impl ShaderDefines for PbrDefines {
@@ -37,6 +40,7 @@ impl ShaderDefines for PbrDefines {
             (self.clearcoat_intensity_map, "CLEARCOAT_INTENSITY_MAP"),
             (self.clearcoat_roughness_map, "CLEARCOAT_ROUGHNESS_MAP"),
             (self.clearcoat_normal_map, "CLEARCOAT_NORMAL_MAP"),
+            (self.anisotropy_enabled, "ANISOTROPY"),
         ];
 
         for (field, define) in fiels_defines {

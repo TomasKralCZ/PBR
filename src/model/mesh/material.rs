@@ -75,6 +75,7 @@ impl StdPbrMaterial {
     }
 }
 
+/// Clearcoat extension parameters
 pub struct Clearcoat {
     pub intensity_factor: f32,
     pub intensity_texture: Option<TextureId>,
@@ -123,15 +124,14 @@ impl Clearcoat {
     }
 }
 
-impl Default for Clearcoat {
-    fn default() -> Self {
-        Self {
-            intensity_factor: 0.,
-            intensity_texture: None,
-            roughness_factor: 0.,
-            roughness_texture: None,
-            normal_texture: None,
-            normal_scale: 1.,
-        }
+/// Simple anisotropy parameter.
+/// This is a placeholder until real anisotropy extension is stabilized in gltf 2.0.
+pub struct Anisotropy {
+    pub anisotropy: f32,
+}
+
+impl Anisotropy {
+    pub fn new() -> Self {
+        Self { anisotropy: 0. }
     }
 }

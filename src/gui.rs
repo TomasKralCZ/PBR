@@ -111,6 +111,12 @@ impl AppState {
                         .text("Roughness")
                         .smart_aim(false),
                 );
+
+                ui.add(
+                    egui::Slider::new(&mut self.pbr_material_override.anisotropy, -1.0..=1.0)
+                        .text("Anisotropy")
+                        .smart_aim(false),
+                );
             });
         });
 

@@ -46,7 +46,8 @@ pub struct Renderer {
 impl Renderer {
     /// Create a new renderer
     pub fn new() -> Result<Self> {
-        let probe = ibl::Probe::new("resources/IBL/rustig_koppie_puresky_4k.hdr")?;
+        //let probe = ibl::Probe::new("resources/IBL/rustig_koppie_puresky_4k.hdr")?;
+        let probe = ibl::Probe::new("resources/IBL/hilly_terrain_01_8k.hdr")?;
 
         Ok(Self {
             shaders: Shaders::new()?,
@@ -226,6 +227,7 @@ impl Renderer {
             clearcoat_intensity_map: cc.and_then(|c| c.intensity_texture).is_some(),
             clearcoat_roughness_map: cc.and_then(|c| c.roughness_texture).is_some(),
             clearcoat_normal_map: cc.and_then(|c| c.normal_texture).is_some(),
+            anisotropy_enabled: prim.anisotropy.is_some(),
         }
     }
 
@@ -251,6 +253,10 @@ impl Renderer {
 
             if let Some(normal_scale) = prim.clearcoat.as_ref().map(|c| c.normal_scale) {
                 self.material.inner.clearcoat_normal_scale = normal_scale;
+            }
+
+            if let Some(anisotropy) = prim.anisotropy.as_ref().map(|a| a.anisotropy) {
+                self.material.inner.anisotropy = anisotropy;
             }
         }
 

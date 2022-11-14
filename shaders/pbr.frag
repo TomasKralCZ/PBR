@@ -28,6 +28,8 @@ layout(std140, binding = 1) uniform PbrMaterial
     uniform float clearcoatIntensityFactor;
     uniform float clearcoatRoughnessFactor;
     uniform float clearcoatNormalScale;
+
+    uniform float anisotropy;
 };
 
 #ifdef ALBEDO_MAP
@@ -88,7 +90,6 @@ struct ShadingParams {
 
     vec3 viewDir;
     vec3 normal;
-    // viewDir * normal (dot product)
     float NoV;
 
     float roughness;
@@ -140,6 +141,41 @@ float normalDistribution(float NoH, float roughness)
     return (asq) / (PI * denom * denom);
 }
 
+#ifdef ANISOTROPY
+// Burley, “Physically-Based Shading at Disney.”
+float anisotropicGgxDistribution(ShadingParams sp, float NoH, vec3 halfway)
+{
+    // Remapping from: Kulla and Conty, “Revisiting Physically Based Shading at Imageworks.”
+    float tRoughness = max(sp.roughness * (1.0 + anisotropy), ROUGHNESS_MIN);
+    float bRoughness = max(sp.roughness * (1.0 - anisotropy), ROUGHNESS_MIN);
+
+    float ToH = dot(vsOut.tangent, halfway);
+    float BoH = dot(vsOut.bitangent, halfway);
+
+    float denom = ((ToH * ToH) / (tRoughness * tRoughness))
+        + ((BoH * BoH) / (bRoughness * bRoughness))
+        + (NoH * NoH);
+
+    denom = denom * denom;
+
+    return (1.0 / (PI * tRoughness * bRoughness)) * (1.0 / denom);
+}
+
+// Taken from: Guy and Agopian, “Physically Based Rendering in Filament.”
+float anisotropicVSmithGgxCorrelated(ShadingParams sp, float ToV, float BoV, float ToL, float BoL, float NoL)
+{
+    // Remapping from: Kulla and Conty, “Revisiting Physically Based Shading at Imageworks.”
+    float tRoughness = max(sp.roughness * (1.0 + anisotropy), ROUGHNESS_MIN);
+    float bRoughness = max(sp.roughness * (1.0 - anisotropy), ROUGHNESS_MIN);
+
+    float lambdaV = NoL * length(vec3(tRoughness * ToV, bRoughness * BoV, sp.NoV));
+    float lambdaL = sp.NoV * length(vec3(tRoughness * ToL, bRoughness * BoL, NoL));
+
+    float v = 0.5 / (lambdaV + lambdaL);
+    return v;
+}
+#endif
+
 float geometryGgx(float ndv, float roughness)
 {
     float asq = roughness * roughness;
@@ -180,6 +216,38 @@ vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway,
 }
 #endif
 
+#ifdef ANISOTROPY
+void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 fresnel, float NoH, float NoL,
+    float VoH, vec3 halfway, vec3 lightDir)
+{
+    float D = anisotropicGgxDistribution(sp, NoH, halfway);
+
+    float ToV = dot(vsOut.tangent, sp.viewDir);
+    float BoV = dot(vsOut.bitangent, sp.viewDir);
+    float ToL = dot(vsOut.tangent, lightDir);
+    float BoL = dot(vsOut.bitangent, lightDir);
+
+    // Visibility term (G divided with denominator)
+    float V = anisotropicVSmithGgxCorrelated(sp, ToV, BoV, ToL, BoL, NoL);
+
+    fresnel = fresnelSchlick(sp.f0, VoH);
+    specular = D * V * fresnel;
+}
+#endif
+
+void baseSpecularIsotropic(ShadingParams sp, inout vec3 specular, inout vec3 fresnel, float NoH,
+    float NoL, float VoH)
+{
+    float normalDistribution = normalDistribution(NoH, sp.roughness);
+    float geometry = geometryShadowing(sp.NoV, NoL, sp.roughness);
+    fresnel = fresnelSchlick(sp.f0, VoH);
+
+    vec3 numerator = normalDistribution * geometry * fresnel;
+    float denominator = 4.0 * sp.NoV * NoL;
+    // + 0.0001 to prevent divide by zero
+    specular = numerator / (denominator + 0.0001);
+}
+
 vec3 calculateDirectLighting(ShadingParams sp)
 {
     vec3 totalRadiance = vec3(0.);
@@ -194,20 +262,13 @@ vec3 calculateDirectLighting(ShadingParams sp)
         // TODO: should add attenuation...
         vec3 radiance = lightColors[i].xyz;
 
-        // Cook-Torrance BRDF
-        float normalDistribution = normalDistribution(NoH, sp.roughness);
-        float geometry = geometryShadowing(sp.NoV, NoL, sp.roughness);
-        vec3 fresnel = fresnelSchlick(sp.f0, VoH);
-
-#ifdef CLEARCOAT
-        float clearcoatFresnel;
-        vec3 clearcoatColor = clearcoatBrdf(sp, clearcoatFresnel, halfway, lightDir, VoH);
+        vec3 fresnel;
+        vec3 specular;
+#ifdef ANISOTROPY
+        baseSpecularAnisotropic(sp, specular, fresnel, NoH, NoL, VoH, halfway, lightDir);
+#else
+        baseSpecularIsotropic(sp, specular, fresnel, NoH, NoL, VoH);
 #endif
-
-        vec3 numerator = normalDistribution * geometry * fresnel;
-        float denominator = 4.0 * sp.NoV * NoL;
-        // + 0.0001 to prevent divide by zero
-        vec3 specular = numerator / (denominator + 0.0001);
 
         // diffuse is 1 - fresnel (the amount of reflected light)
         vec3 kd = vec3(1.0) - fresnel;
@@ -218,6 +279,9 @@ vec3 calculateDirectLighting(ShadingParams sp)
         vec3 diffuse = kd * sp.albedo.rgb / PI;
 
 #ifdef CLEARCOAT
+        float clearcoatFresnel;
+        vec3 clearcoatColor = clearcoatBrdf(sp, clearcoatFresnel, halfway, lightDir, VoH);
+
         vec3 brdf;
         if (clearcoatEnabled) {
             // Energy loss due to the clearcoat layer is given by 1 - clearcoatFresnel
@@ -244,7 +308,18 @@ vec3 calculateIBL(ShadingParams sp)
     vec3 irradiance = texture(irradianceMap, sp.normal).rgb;
     vec3 iblDiffuse = irradiance * sp.albedo.rgb;
 
+#ifdef ANISOTROPY
+    // https://google.github.io/filament/Filament.html#lighting/imagebasedlights/anisotropy
+    // Based on
+    // McAuley: Rendering the World of Far Cry 4.
+    vec3 anisotropicDirection = anisotropy >= 0.0 ? vsOut.bitangent : vsOut.tangent;
+    vec3 anisotropicTangent = cross(anisotropicDirection, sp.viewDir);
+    vec3 anisotropicNormal = cross(anisotropicTangent, anisotropicDirection);
+    vec3 bentNormal = normalize(mix(sp.normal, anisotropicNormal, anisotropy));
+    vec3 reflectDir = reflect(-sp.viewDir, bentNormal);
+#else
     vec3 reflectDir = reflect(-sp.viewDir, sp.normal);
+#endif
 
     const float MAX_REFLECTION_LOD = 6.0;
     vec3 prefilteredLight = textureLod(prefilterMap, reflectDir, sp.roughness * MAX_REFLECTION_LOD).rgb;
@@ -341,6 +416,7 @@ void initShadingParams(inout ShadingParams sp)
     // For some reason the roughness is read from the *green* channel
     sp.clearcoatRoughness *= texture(clearcoatRoughnessTex, vsOut.texCoords).g;
 #endif
+    sp.clearcoatRoughness = sp.clearcoatRoughness * sp.clearcoatRoughness;
     // Prevent division by 0
     sp.clearcoatRoughness = clamp(sp.clearcoatRoughness, ROUGHNESS_MIN, 1.0);
 

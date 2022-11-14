@@ -14,6 +14,8 @@ pub struct PbrMaterial {
     pub clearcoat_intensity_factor: f32,
     pub clearcoat_roughness_factor: f32,
     pub clearcoat_normal_scale: f32,
+
+    pub anisotropy: f32,
 }
 
 impl PbrMaterial {
@@ -29,6 +31,8 @@ impl PbrMaterial {
             clearcoat_intensity_factor: 0.0,
             clearcoat_roughness_factor: 0.0,
             clearcoat_normal_scale: 1.0,
+
+            anisotropy: 0.0,
         }
     }
 }

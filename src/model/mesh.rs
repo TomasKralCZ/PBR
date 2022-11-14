@@ -13,7 +13,7 @@ use crate::ogl::{self, gl_buffer::GlBuffer, vao::Vao, TextureId};
 mod material;
 mod tangents;
 
-use self::material::{Clearcoat, StdPbrMaterial};
+use self::material::{Anisotropy, Clearcoat, StdPbrMaterial};
 
 use super::DataBundle;
 
@@ -56,6 +56,7 @@ pub struct Primitive {
 
     pub pbr_material: StdPbrMaterial,
     pub clearcoat: Option<Clearcoat>,
+    pub anisotropy: Option<Anisotropy>,
 }
 
 impl Primitive {
@@ -78,15 +79,16 @@ impl Primitive {
             .map(|cc| Clearcoat::from_gltf(&cc, bundle))
             .flatten();
 
-        // TODO: investigate trangent calculation condition (anisotropy as well, right ?)
-        if pbr_material.normal_texture.is_some()
-            || clearcoat
-                .as_ref()
-                .map(|c| c.normal_texture.is_some())
-                .unwrap_or(false)
-        {
-            Self::calculate_tangents(&mut vertex_buf, &index_buf);
-        }
+        // Placeholder until anisotropy extensioni is stabilized
+        let anisotropy = Some(Anisotropy::new());
+
+        Self::check_calculate_tangents(
+            &pbr_material,
+            &clearcoat,
+            &anisotropy,
+            &mut vertex_buf,
+            &index_buf,
+        );
 
         let vertex_buffer = GlBuffer::new(&vertex_buf);
         let vao = Self::create_vao(&vertex_buffer, &index_buffer);
@@ -100,6 +102,7 @@ impl Primitive {
             indices_type: gl::UNSIGNED_INT,
             pbr_material,
             clearcoat,
+            anisotropy,
         };
 
         Ok(prim)
@@ -189,6 +192,24 @@ impl Primitive {
         };
 
         Ok(indices)
+    }
+
+    fn check_calculate_tangents(
+        pbr_material: &StdPbrMaterial,
+        clearcoat: &Option<Clearcoat>,
+        anisotropy: &Option<Anisotropy>,
+        vertex_buf: &mut Vec<Vertex>,
+        index_buf: &Vec<u32>,
+    ) {
+        if pbr_material.normal_texture.is_some()
+            || anisotropy.is_some()
+            || clearcoat
+                .as_ref()
+                .map(|c| c.normal_texture.is_some())
+                .unwrap_or(false)
+        {
+            Self::calculate_tangents(vertex_buf, index_buf);
+        }
     }
 }
 
