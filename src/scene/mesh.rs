@@ -8,12 +8,16 @@ use gltf::{
     texture::{MagFilter, MinFilter, WrappingMode},
 };
 
-use crate::ogl::{self, gl_buffer::GlBuffer, vao::Vao, TextureId};
+use crate::ogl::{gl_buffer::GlBuffer, vao::Vao, TextureId};
 
 mod material;
 mod tangents;
+mod vertex;
 
-use self::material::{Anisotropy, Clearcoat, StdPbrMaterial};
+use self::{
+    material::{Anisotropy, Clearcoat, StdPbrMaterial},
+    vertex::Vertex,
+};
 
 use super::DataBundle;
 
@@ -79,16 +83,18 @@ impl Primitive {
             .map(|cc| Clearcoat::from_gltf(&cc, bundle))
             .flatten();
 
-        // Placeholder until anisotropy extensioni is stabilized
+        // Placeholder until anisotropy extension is stabilized
         let anisotropy = Some(Anisotropy::new());
 
-        Self::check_calculate_tangents(
-            &pbr_material,
-            &clearcoat,
-            &anisotropy,
-            &mut vertex_buf,
-            &index_buf,
-        );
+        if primitive.get(&gltf::Semantic::Tangents).is_none() {
+            Self::check_calculate_tangents(
+                &pbr_material,
+                &clearcoat,
+                &anisotropy,
+                &mut vertex_buf,
+                &index_buf,
+            );
+        }
 
         let vertex_buffer = GlBuffer::new(&vertex_buf);
         let vao = Self::create_vao(&vertex_buffer, &index_buffer);
@@ -137,14 +143,19 @@ impl Primitive {
         let mut normals_iter = reader
             .read_normals()
             .ok_or(eyre!("primitive doesn't containt normals"))?;
+        let mut tangents_iter = reader.read_tangents();
 
-        // TODO: support models with more than 1 texture set ?
+        // TODO: support multiple texture coordinates sets
         let mut texcoords_reader = None;
         let mut texture_set = 0;
         while let Some(reader) = reader.read_tex_coords(texture_set) {
             if texture_set >= 1 {
-                eprintln!("WARN: primitive has more than 1 texture coordinate set");
-                break;
+                eprintln!(
+                    "WARN: primitive has more than 1 texture coordinate set: {}",
+                    texture_set
+                );
+                texture_set += 1;
+                continue;
             }
 
             texcoords_reader = Some(reader.into_f32());
@@ -164,8 +175,11 @@ impl Primitive {
                 .and_then(|t| t.next())
                 .unwrap_or([0.; 2]);
 
-            // I'm doing all the tangent computation myself for compatibility (gltf 2.0 tangents are in mikktspace)
-            let tangent = [0.; 4];
+            let tangent = tangents_iter
+                .as_mut()
+                .and_then(|t| t.next())
+                .unwrap_or([0.; 4]);
+
             let vertex = Vertex {
                 pos,
                 normal,
@@ -311,26 +325,4 @@ fn set_texture_sampler(texture: u32, sampler: &gltf::texture::Sampler) {
         gl::TextureParameteri(texture, gl::TEXTURE_WRAP_S, wrap_s as i32);
         gl::TextureParameteri(texture, gl::TEXTURE_WRAP_T, wrap_t as i32);
     }
-}
-
-#[repr(C)]
-#[derive(Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vertex {
-    pub pos: [f32; 3],
-    pub normal: [f32; 3],
-    pub texcoords: [f32; 2],
-    pub tangent: [f32; 4],
-}
-
-impl Vertex {
-    const ATTRIB_SIZES: [i32; 4] = [3, 3, 2, 4];
-    const ATTRIB_INDICES: [u32; 4] = [
-        ogl::POSITION_INDEX,
-        ogl::NORMALS_INDEX,
-        ogl::TEXCOORDS_INDEX,
-        ogl::TANGENT_INDEX,
-    ];
-
-    const ATTRIB_TYPES: [GLenum; 4] = [gl::FLOAT; 4];
-    const ATTRIB_OFFSETS: [usize; 4] = [0, 12, 24, 32];
 }

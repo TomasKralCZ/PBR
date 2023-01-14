@@ -1,99 +1,147 @@
-use eyre::Result;
+use std::path::Path;
 
-use crate::{model::Model, util::timed_scope};
+use eyre::{eyre, Result};
+use glam::{Mat4, Quat, Vec3};
+use gltf::scene::Transform as GTransform;
 
+mod mesh;
+
+use crate::ogl::TextureId;
+
+pub use self::mesh::{Mesh, Primitive};
+
+/// Image and vertex data of the asset.
+pub struct DataBundle {
+    /// Vertex data
+    buffers: Vec<gltf::buffer::Data>,
+    /// Texture data
+    images: Vec<gltf::image::Data>,
+    /// To keep track if which textures were already sent to the GPU
+    pub gl_textures: Vec<Option<TextureId>>,
+}
+
+impl DataBundle {
+    fn new(buffers: Vec<gltf::buffer::Data>, images: Vec<gltf::image::Data>) -> Self {
+        Self {
+            buffers,
+            gl_textures: vec![Option::None; images.len()],
+            images,
+        }
+    }
+}
+
+/// This represents a gltf sacene and contains necessary data for rendering.
 pub struct Scene {
-    models: Vec<LazyModel>,
+    /// An artifical root node
+    pub root: Node,
+    /// Name of the scene
+    pub name: String,
+    /// Model transforms of the whole object
+    pub transform: Mat4,
 }
 
 impl Scene {
-    /// Adds models to the scene
-    pub fn init() -> Result<Self> {
-        let mut models = Vec::new();
+    /// Load the scene from a path to a gltf file
+    pub fn from_gltf(path: &str) -> Result<Scene> {
+        let (gltf, buffers, images) = gltf::import(path)?;
+        let name = Path::new(path)
+            .file_name()
+            .map(|osstr| osstr.to_string_lossy().to_string())
+            .unwrap_or_else(|| "N/A".to_string());
 
-        let mut add = |path: &'static str| {
-            let lazy_model = LazyModel::new(path);
-            models.push(lazy_model);
+        let mut bundle = DataBundle::new(buffers, images);
+
+        if gltf.scenes().len() != 1 {
+            return Err(eyre!("GLTF file contains more than 1 scene"));
+        }
+        let scene = gltf.scenes().next().unwrap();
+
+        let mut id = 1;
+        let mut nodes = Vec::new();
+        for node in scene.nodes() {
+            let node = Node::from_gltf(&node, &mut bundle, &mut id, &scene)?;
+            id += 1;
+            nodes.push(node);
+        }
+
+        let root = Node {
+            index: usize::MAX,
+            name: scene.name().unwrap_or("Root").to_string(),
+            children: nodes,
+            mesh: None,
+            transform: Mat4::IDENTITY,
         };
 
-        add("resources/helmet/DamagedHelmet.gltf");
-
-        add("resources/MetalRoughSpheres/glTF-Binary/MetalRoughSpheres.glb");
-
-        add("resources/Sphere.glb");
-
-        add("resources/shoe_with_clearcoat/shoe.gltf");
-
-        add("resources/ClearCoatTest.glb");
-
-        add("resources/kasatka_71m_-_three-bolt_equipment/kasatka.gltf");
-
-        add("resources/bottle/WaterBottle.gltf");
-
-        add("resources/free_1975_porsche_911_930_turbo/porsche.gltf");
-
-        add("resources/ToyCar.glb");
-
-        add("resources/santa_conga_freebiexmass/drum.gltf");
-
-        add("resources/game_ready_pbr_microscope/microscope.gltf");
-
-        /* let len = models.len();
-        models[len - 1].transform = glam::Mat4::from_scale(Vec3::splat(0.05));
-
-        models[len - 2].transform = glam::Mat4::from_scale(Vec3::splat(3.0));
-
-        models[len - 3].transform = glam::Mat4::from_scale(Vec3::splat(20.0)); */
-
-        Ok(Self { models })
-    }
-
-    pub fn get_model(&mut self, index: usize) -> Result<&Model> {
-        self.models[index].get()
-    }
-
-    pub fn get_models(&self) -> &[LazyModel] {
-        &self.models
+        Ok(Scene {
+            root,
+            name,
+            transform: Mat4::IDENTITY,
+        })
     }
 }
 
-/// Loading models takes a long time, load them lazily
-pub struct LazyModel {
-    path: &'static str,
-    model: Option<Model>,
+/// A Node represents a subset of a gltf scene
+/// Nodes form a tree hierarchy
+pub struct Node {
+    /// The same index as in the gltf file
+    pub index: usize,
+    /// Name of the node
+    pub name: String,
+    /// Children nodes
+    pub children: Vec<Node>,
+    /// Optional mesh data of the node (can contain multiple primitives)
+    pub mesh: Option<Mesh>,
+    /// Transform of the node in the hierarchy
+    pub transform: Mat4,
 }
 
-impl LazyModel {
-    fn new(path: &'static str) -> Self {
-        Self { path, model: None }
-    }
+impl Node {
+    /// Crate a node from a gltf::Node structure
+    fn from_gltf(
+        node: &gltf::Node,
+        bundle: &mut DataBundle,
+        id: &mut u32,
+        scene: &gltf::Scene,
+    ) -> Result<Self> {
+        let mut children = Vec::new();
 
-    fn get(&mut self) -> Result<&Model> {
-        // Can't use if let Some(...) because the borrow checker is angry
-        // Can't use get_or_insert_with(...) because I need error handling
-        if self.model.is_some() {
-            Ok(self.model.as_ref().unwrap())
-        } else {
-            let path = self.path;
+        let name = node.name().unwrap_or(&format!("Node-{id}")).to_string();
 
-            let model = timed_scope(&format!("Loading '{path}'"), || Model::from_gltf(path))?;
-
-            self.model = Some(model);
-
-            Ok(self.model.as_ref().unwrap())
+        for child_node in node.children() {
+            *id += 1;
+            let node = Node::from_gltf(&child_node, bundle, id, scene)?;
+            children.push(node);
         }
-    }
 
-    pub fn name(&self) -> &str {
-        // Find the index where the filename starts (if any)
-        let start = self
-            .path
-            .rfind('/')
-            .map(|i| i + 1)
-            .unwrap_or(self.path.rfind('\\').map(|i| i + 1).unwrap_or(0));
-        // Find the index where the file extension starts (if any)
-        let end = self.path.rfind('.').unwrap_or(self.path.len());
+        let mesh = match node.mesh() {
+            Some(m) => Some(Mesh::from_gltf(&m, bundle)?),
+            None => None,
+        };
 
-        &self.path[start..end]
+        let transform = match node.transform() {
+            GTransform::Matrix { matrix } => Mat4::from_cols_array_2d(&matrix),
+            GTransform::Decomposed {
+                translation,
+                rotation,
+                scale,
+            } => {
+                Mat4::from_translation(Vec3::from(translation))
+                    * Mat4::from_quat(Quat::from_xyzw(
+                        rotation[0],
+                        rotation[1],
+                        rotation[2],
+                        rotation[3],
+                    ))
+                    * Mat4::from_scale(Vec3::from(scale))
+            }
+        };
+
+        Ok(Self {
+            index: node.index(),
+            children,
+            mesh,
+            transform,
+            name,
+        })
     }
 }

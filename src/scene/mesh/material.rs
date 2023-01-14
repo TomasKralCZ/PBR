@@ -1,4 +1,4 @@
-use crate::{model::DataBundle, ogl::TextureId};
+use crate::{scene::DataBundle, ogl::TextureId};
 
 use super::create_texture;
 
