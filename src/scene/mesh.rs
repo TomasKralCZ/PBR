@@ -71,8 +71,8 @@ impl Primitive {
             return Err(eyre!("primitive mode: '{mode:?}' is not impelemnted"));
         }
 
-        let mut vertex_buf = Self::load_vertex_atrrib_buf(&primitive, bundle)?;
-        let index_buf = Self::load_indices_buf(&primitive, bundle)?;
+        let mut vertex_buf = Self::load_vertex_atrrib_buf(primitive, bundle)?;
+        let index_buf = Self::load_indices_buf(primitive, bundle)?;
 
         let index_buffer = GlBuffer::new(&index_buf);
 
@@ -80,8 +80,7 @@ impl Primitive {
         let clearcoat = primitive
             .material()
             .clearcoat()
-            .map(|cc| Clearcoat::from_gltf(&cc, bundle))
-            .flatten();
+            .and_then(|cc| Clearcoat::from_gltf(&cc, bundle));
 
         // Placeholder until anisotropy extension is stabilized
         let anisotropy = Some(Anisotropy::new());
@@ -137,7 +136,7 @@ impl Primitive {
     ) -> Result<Vec<Vertex>> {
         let reader = primitive.reader(|buffer| Some(&bundle.buffers[buffer.index()]));
 
-        let mut position_iter = reader
+        let position_iter = reader
             .read_positions()
             .ok_or(eyre!("primitive doesn't containt positions"))?;
         let mut normals_iter = reader
@@ -165,7 +164,7 @@ impl Primitive {
 
         let mut buf = Vec::with_capacity(position_iter.len());
 
-        while let Some(pos) = position_iter.next() {
+        for pos in position_iter {
             let Some(normal) = normals_iter.next() else {
                 return Err(eyre!("primitive attributes have different lengths"));
             };
@@ -213,7 +212,7 @@ impl Primitive {
         clearcoat: &Option<Clearcoat>,
         anisotropy: &Option<Anisotropy>,
         vertex_buf: &mut Vec<Vertex>,
-        index_buf: &Vec<u32>,
+        index_buf: &[u32],
     ) {
         if pbr_material.normal_texture.is_some()
             || anisotropy.is_some()

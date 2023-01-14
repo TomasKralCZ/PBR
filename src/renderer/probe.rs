@@ -30,7 +30,7 @@ impl Probe {
     pub fn from_cubemap(cubemap_tex_id: TextureId) -> Result<Self> {
         let textures = Self::compute_ibl(cubemap_tex_id)?;
 
-        Ok(Self { textures: textures })
+        Ok(Self { textures })
     }
 
     pub fn compute_ibl(cubemap_tex_id: TextureId) -> Result<ProbeTextures> {

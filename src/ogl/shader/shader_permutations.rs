@@ -39,7 +39,7 @@ impl<T: ShaderDefines> ShaderPermutations<T> {
             self.permutations.insert(defines.clone(), shader);
         }
 
-        Ok(&self.permutations.get(&defines).as_ref().unwrap())
+        Ok(self.permutations.get(&defines).as_ref().unwrap())
     }
 
     fn compile_shader(&mut self, defines: &T) -> Result<Shader> {

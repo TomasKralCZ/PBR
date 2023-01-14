@@ -94,7 +94,7 @@ impl Flycam {
         let y = rad_zenith.sin();
         let z = rad_azimuth.sin() * rad_zenith.cos();
 
-        self.dir = Vec3::new(x as f32, y as f32, z as f32).normalize();
+        self.dir = Vec3::new(x, y, z).normalize();
         self.changed = true;
     }
 }
@@ -190,7 +190,7 @@ impl Orbitalcam {
         let y = rad_zenith.sin();
         let z = rad_azimuth.sin() * rad_zenith.cos();
 
-        self.pos = Vec3::new(x as f32, y as f32, z as f32).normalize();
+        self.pos = Vec3::new(x, y, z).normalize();
     }
 
     fn clamp_angle(angle: &mut f32) {

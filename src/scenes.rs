@@ -85,7 +85,7 @@ impl LazyScene {
             .path
             .rfind('/')
             .map(|i| i + 1)
-            .unwrap_or(self.path.rfind('\\').map(|i| i + 1).unwrap_or(0));
+            .unwrap_or_else(|| self.path.rfind('\\').map(|i| i + 1).unwrap_or(0));
         // Find the index where the file extension starts (if any)
         let end = self.path.rfind('.').unwrap_or(self.path.len());
 
