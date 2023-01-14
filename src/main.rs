@@ -9,7 +9,7 @@ use eyre::Result;
 use glam::Vec3;
 use gui::GuiCtx;
 use renderer::Renderer;
-use scene::Scene;
+use scenes::Scenes;
 use sdl2::{keyboard::Scancode, EventPump};
 
 use window::AppWindow;
@@ -22,8 +22,8 @@ mod camera;
 /// All of the code for drawing the GUI using egui.
 mod gui;
 
-/// Represents a single gltf 2.0 model (used models only have 1 scene).
-mod model;
+/// Represents a single gltf 2.0 scene (used files only have 1 scene).
+mod scene;
 
 /// Handles rendering the whole scene.
 mod renderer;
@@ -34,7 +34,7 @@ mod ogl;
 /// Handles window creation and egui boilerplate.
 mod window;
 
-mod scene;
+mod scenes;
 
 mod util;
 
@@ -46,7 +46,7 @@ fn main() -> Result<()> {
     ogl::init_debug();
 
     let mut appstate = AppState::new(&window);
-    let mut scene = Scene::init()?;
+    let mut scenes = Scenes::init()?;
     let mut renderer = Renderer::new()?;
     let mut flycam = Flycam::new(
         Vec3::new(0.2, 3., 7.5),
@@ -69,12 +69,12 @@ fn main() -> Result<()> {
 
         handle_inputs(&mut window.event_pump, active_cam);
 
-        if let Some(model) = appstate.selected_model {
-            renderer.render(scene.get_model(model)?, active_cam, &appstate);
+        if let Some(scene) = appstate.selected_scene {
+            renderer.render(scenes.get_scene(scene)?, active_cam, &appstate);
         }
 
         let mut gui_ctx = GuiCtx {
-            models: scene.get_models(),
+            scenes: &mut scenes,
             camera: active_cam,
             cam_typ: &mut cam_typ,
             renderer: &mut renderer,

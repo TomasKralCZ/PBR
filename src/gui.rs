@@ -3,13 +3,13 @@ use egui::{CtxRef, RichText, Ui};
 use crate::{
     camera::{Camera, CameraTyp},
     renderer::Renderer,
-    scene::LazyModel,
+    scenes::Scenes,
     AppState,
 };
 
 /// All state that needs to be rendered in the GUI
 pub struct GuiCtx<'a> {
-    pub models: &'a [LazyModel],
+    pub scenes: &'a mut Scenes,
     pub camera: &'a mut dyn Camera,
     pub cam_typ: &'a mut CameraTyp,
     pub renderer: &'a mut Renderer,
@@ -21,17 +21,6 @@ impl AppState {
     ///
     /// Immediate mode GUI - is called every frame.
     pub fn create_gui(&mut self, gui_ctx: &mut GuiCtx, egui_ctx: &mut CtxRef) {
-        egui::TopBottomPanel::top("top_panel")
-            .resizable(true)
-            .min_height(32.0)
-            .show(egui_ctx, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.heading("Expandable Upper Panel");
-                    });
-                });
-            });
-
         egui::SidePanel::left("left_panel")
             .resizable(true)
             .max_width(400.0)
@@ -46,23 +35,12 @@ impl AppState {
                 self.right_panel(ui, gui_ctx);
             });
 
-        egui::TopBottomPanel::bottom("bottom_panel")
-            .resizable(false)
-            .min_height(0.0)
-            .show(egui_ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.heading("Bottom Panel");
-                });
-            });
-
         let ppp = egui_ctx.pixels_per_point();
         let rect = egui_ctx.available_rect();
         self.render_viewport_dim.min_x = ppp * rect.left();
         self.render_viewport_dim.min_y = ppp * rect.top();
         self.render_viewport_dim.width = ppp * rect.width();
         self.render_viewport_dim.height = ppp * rect.height();
-
-        //self.gui_model_hierarchy_window(gui_ctx.models, egui_ctx);
     }
 
     fn right_panel(&mut self, ui: &mut Ui, gui_ctx: &mut GuiCtx) {
@@ -148,68 +126,18 @@ impl AppState {
         });
     }
 
-    fn left_panel(&mut self, ui: &mut Ui, gui_ctx: &GuiCtx) {
+    fn left_panel(&mut self, ui: &mut Ui, gui_ctx: &mut GuiCtx) {
         ui.group(|ui| {
             ui.add(egui::Label::new(RichText::new("Models").heading().strong()));
             ui.separator();
 
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for (i, model) in gui_ctx.models.iter().enumerate() {
-                    if ui.button(model.name()).clicked() {
-                        self.selected_model = Some(i);
+                for (i, scene) in gui_ctx.scenes.get_scenes().iter().enumerate() {
+                    if ui.button(scene.name()).clicked() {
+                        self.selected_scene = Some(i);
                     }
                 }
             });
         });
     }
-
-    /* /// Create the subwindow containing the model hierarchy
-    fn gui_model_hierarchy_window(&mut self, scene: &mut [Model], egui_ctx: &mut CtxRef) {
-        let model = &mut scene[self.selected_model];
-
-        egui::Window::new("Model Hierarchy")
-            .scroll2([false, true])
-            .resizable(true)
-            .show(egui_ctx, |ui| {
-                self.gui_node(&mut model.root, ui);
-            });
-    } */
-
-    /* /// Recursive - creates the node hierarchy inside the model hierarchy window
-    fn gui_node(&mut self, node: &mut Node, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            if !&node.children.is_empty() {
-                CollapsingHeader::new(&node.name)
-                    .id_source(node.index)
-                    .selectable(true)
-                    .show(ui, |ui| {
-                        for child_node in &mut node.children {
-                            self.gui_node(child_node, ui);
-                        }
-                    });
-            } else {
-                ui.label(&node.name);
-            }
-
-            if let Some(mesh) = &mut node.mesh {
-                self.gui_mesh(mesh, ui);
-            }
-        });
-    } */
-
-    /* fn gui_mesh(&mut self, mesh: &mut Mesh, ui: &mut Ui) {
-        if !mesh.primitives.is_empty() {
-            CollapsingHeader::new(mesh.name.as_ref().unwrap_or(&"N/A".to_string()))
-                .selectable(true)
-                .show(ui, |ui| {
-                    for prim in &mut mesh.primitives {
-                        CollapsingHeader::new(&format!("{}-primitive", prim.vao))
-                            .selectable(true)
-                            .show(ui, |ui| {
-                                prim.inspect_mut("Primitive", ui);
-                            });
-                    }
-                });
-        }
-    } */
 }

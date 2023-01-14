@@ -5,14 +5,14 @@ use glam::{Mat4, Vec3};
 use crate::{
     app::{AppState, RenderViewportDim},
     camera::Camera,
-    model::{Mesh, Model, Node, Primitive},
-    ogl::{self, uniform_buffer::UniformBuffer, vao::Vao},
+    ogl::{self, uniform_buffer::UniformBuffer, vao::Vao, TextureId},
+    scene::{Mesh, Node, Primitive, Scene},
 };
 
-mod cube;
-mod ibl;
+mod cubemap;
 mod lighting;
 pub mod material;
+pub mod probe;
 mod settings;
 mod shaders;
 mod transforms;
@@ -20,8 +20,8 @@ mod transforms;
 pub use material::PbrMaterial;
 
 use self::{
-    ibl::Probe,
     lighting::Lighting,
+    probe::Probe,
     settings::Settings,
     shaders::{PbrDefines, Shaders},
     transforms::Transforms,
@@ -38,16 +38,19 @@ pub struct Renderer {
     lighting: UniformBuffer<Lighting>,
     /// Runtime rendering settings
     pub settings: UniformBuffer<Settings>,
-    probe: Probe,
-    sphere: Model,
+    sphere: Scene,
     cube: Vao,
+    cubemap_id: TextureId,
+    probe: Probe,
 }
 
 impl Renderer {
     /// Create a new renderer
     pub fn new() -> Result<Self> {
-        //let probe = ibl::Probe::new("resources/IBL/rustig_koppie_puresky_4k.hdr")?;
-        let probe = ibl::Probe::new("resources/IBL/hilly_terrain_01_8k.hdr")?;
+        let cubemap_id =
+            probe::load_cubemap_from_equi("resources/IBL/rustig_koppie_puresky_4k.hdr")?;
+
+        let probe = Probe::from_cubemap(cubemap_id)?;
 
         Ok(Self {
             shaders: Shaders::new()?,
@@ -55,26 +58,27 @@ impl Renderer {
             material: UniformBuffer::new(PbrMaterial::new()),
             lighting: UniformBuffer::new(Lighting::new()),
             settings: UniformBuffer::new(Settings::new()),
+            sphere: Scene::from_gltf("resources/Sphere.glb")?,
+            cube: cubemap::init_cube(),
+            cubemap_id,
             probe,
-            sphere: Model::from_gltf("resources/Sphere.glb")?,
-            cube: cube::init_cube(),
         })
     }
 
     /// Render a new frame
-    pub fn render(&mut self, model: &Model, camera: &mut dyn Camera, appstate: &AppState) {
+    pub fn render(&mut self, scene: &mut Scene, camera: &mut dyn Camera, appstate: &AppState) {
         Self::reset_gl_state(&appstate.render_viewport_dim);
-        self.update_uniforms(appstate, camera, model);
+        self.update_uniforms(appstate, camera, scene);
 
         self.render_lights();
 
-        let transform = model.transform;
-        self.render_node(&model.root, transform, appstate);
+        let transform = scene.transform;
+        self.render_node(&scene.root, transform, appstate);
 
         self.draw_cubemap();
     }
 
-    fn update_uniforms(&mut self, appstate: &AppState, camera: &mut dyn Camera, model: &Model) {
+    fn update_uniforms(&mut self, appstate: &AppState, camera: &mut dyn Camera, scene: &Scene) {
         self.settings.update();
 
         let persp = Mat4::perspective_rh_gl(
@@ -86,7 +90,7 @@ impl Renderer {
 
         self.transforms.inner.projection = persp;
         self.transforms.inner.view = camera.view_mat();
-        self.transforms.inner.model = model.transform;
+        self.transforms.inner.model = scene.transform;
         self.transforms.update();
 
         self.lighting.inner.cam_pos = camera.get_pos().extend(0.0);
@@ -95,12 +99,12 @@ impl Renderer {
 
     fn draw_cubemap(&mut self) {
         self.shaders.cubemap_shader.use_shader(|| unsafe {
-            gl::BindTextureUnit(0, self.probe.cubemap_tex_id);
+            gl::BindTextureUnit(0, self.cubemap_id);
 
             gl::BindVertexArray(self.cube.id);
             gl::DrawElements(
                 gl::TRIANGLES,
-                cube::INDICES.len() as _,
+                cubemap::INDICES.len() as _,
                 gl::UNSIGNED_BYTE,
                 0 as _,
             );
@@ -207,9 +211,9 @@ impl Renderer {
         );
 
         unsafe {
-            gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.probe.irradiance_tex_id);
-            gl::BindTextureUnit(ogl::PREFILTER_PORT, self.probe.prefilter_tex_id);
-            gl::BindTextureUnit(ogl::BRDF_PORT, self.probe.brdf_lut_id);
+            gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.probe.textures.irradiance_tex_id);
+            gl::BindTextureUnit(ogl::PREFILTER_PORT, self.probe.textures.prefilter_tex_id);
+            gl::BindTextureUnit(ogl::BRDF_PORT, self.probe.textures.brdf_lut_id);
         }
     }
 
