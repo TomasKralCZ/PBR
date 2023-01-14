@@ -1,4 +1,4 @@
-use std::mem::size_of;
+use std::{mem::size_of, rc::Rc};
 
 use eyre::{eyre, Result};
 use gl::types::GLenum;
@@ -8,7 +8,7 @@ use gltf::{
     texture::{MagFilter, MinFilter, WrappingMode},
 };
 
-use crate::ogl::{gl_buffer::GlBuffer, vao::Vao, TextureId};
+use crate::ogl::{gl_buffer::GlBuffer, texture::GlTexture, vao::Vao};
 
 mod material;
 mod tangents;
@@ -25,7 +25,6 @@ use super::DataBundle;
 /// A gltf 'Mesh' contains multiple real sub-meshes (called Primitives in the gltf parlance)
 pub struct Mesh {
     /// 'Primitives' of the 'mesh'
-    // TODO: could be optimized - most meshes probably only contain a single primitive - avoid allocating a vector
     pub primitives: Vec<Primitive>,
     /// Name of the 'Mesh'
     pub name: Option<String>,
@@ -230,38 +229,37 @@ impl Primitive {
 ///
 /// If the texture already exists (bundle.gl_textures\[texture_index\] == Some(...)),
 /// no new texture is created, only the Texture struct is cloned.
-fn create_texture(tex: &gltf::Texture, bundle: &mut DataBundle) -> TextureId {
+fn create_texture(tex: &gltf::Texture, bundle: &mut DataBundle) -> Rc<GlTexture> {
     let tex_index = tex.source().index();
-    if let Some(texture) = bundle.gl_textures[tex_index] {
-        return texture;
+    if let Some(texture) = &bundle.gl_textures[tex_index] {
+        return texture.clone();
     }
 
-    let gl_tex_id = unsafe {
-        let mut texture = 0;
-        gl::CreateTextures(gl::TEXTURE_2D, 1, &mut texture);
+    let gl_tex = GlTexture::new(gl::TEXTURE_2D);
+    set_texture_sampler(gl_tex.id, &tex.sampler());
 
-        set_texture_sampler(texture, &tex.sampler());
+    let image = &bundle.images[tex_index];
 
-        let image = &bundle.images[tex_index];
+    assert!(image.width.is_power_of_two());
+    assert!(image.height.is_power_of_two());
 
-        assert!(image.width.is_power_of_two());
-        assert!(image.height.is_power_of_two());
+    let (internal_format, format) = match image.format {
+        Format::R8 => (gl::R8, gl::RED),
+        Format::R8G8 => (gl::RG8, gl::RG),
+        Format::R8G8B8 => (gl::RGB8, gl::RGB),
+        Format::R8G8B8A8 => (gl::RGBA8, gl::RGBA),
+        f => unimplemented!("Unimplemented image format: '{f:?}'"),
+    };
 
-        let (internal_format, format) = match image.format {
-            Format::R8 => (gl::R8, gl::RED),
-            Format::R8G8 => (gl::RG8, gl::RG),
-            Format::R8G8B8 => (gl::RGB8, gl::RGB),
-            Format::R8G8B8A8 => (gl::RGBA8, gl::RGBA),
-            f => unimplemented!("Unimplemented image format: '{f:?}'"),
-        };
+    let w = image.width as i32;
+    let h = image.height as i32;
 
-        let w = image.width as i32;
-        let h = image.height as i32;
+    let levels = 1 + f32::floor(f32::log2(i32::max(w, h) as f32)) as i32;
 
-        let levels = 1 + f32::floor(f32::log2(i32::max(w, h) as f32)) as i32;
-        gl::TextureStorage2D(texture, levels, internal_format, w, h);
+    unsafe {
+        gl::TextureStorage2D(gl_tex.id, levels, internal_format, w, h);
         gl::TextureSubImage2D(
-            texture,
+            gl_tex.id,
             0,
             0,
             0,
@@ -272,13 +270,13 @@ fn create_texture(tex: &gltf::Texture, bundle: &mut DataBundle) -> TextureId {
             image.pixels.as_ptr() as _,
         );
 
-        gl::GenerateTextureMipmap(texture);
-
-        texture
+        gl::GenerateTextureMipmap(gl_tex.id);
     };
 
-    bundle.gl_textures[tex_index] = Some(gl_tex_id);
-    gl_tex_id
+    let rc_tex = Rc::new(gl_tex);
+
+    bundle.gl_textures[tex_index] = Some(rc_tex.clone());
+    rc_tex
 }
 
 /// Sets the appropriate sampler functions for the currently created texture.

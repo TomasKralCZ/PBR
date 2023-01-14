@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, rc::Rc};
 
 use eyre::{eyre, Result};
 use glam::{Mat4, Quat, Vec3};
@@ -6,7 +6,7 @@ use gltf::scene::Transform as GTransform;
 
 mod mesh;
 
-use crate::ogl::TextureId;
+use crate::ogl::texture::GlTexture;
 
 pub use self::mesh::{Mesh, Primitive};
 
@@ -17,7 +17,7 @@ pub struct DataBundle {
     /// Texture data
     images: Vec<gltf::image::Data>,
     /// To keep track if which textures were already sent to the GPU
-    pub gl_textures: Vec<Option<TextureId>>,
+    pub gl_textures: Vec<Option<Rc<GlTexture>>>,
 }
 
 impl DataBundle {

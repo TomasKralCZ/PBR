@@ -37,10 +37,10 @@ impl AppState {
 
         let ppp = egui_ctx.pixels_per_point();
         let rect = egui_ctx.available_rect();
-        self.render_viewport_dim.min_x = ppp * rect.left();
-        self.render_viewport_dim.min_y = ppp * rect.top();
-        self.render_viewport_dim.width = ppp * rect.width();
-        self.render_viewport_dim.height = ppp * rect.height();
+        gui_ctx.renderer.viewport_dim.min_x = ppp * rect.left();
+        gui_ctx.renderer.viewport_dim.min_y = ppp * rect.top();
+        gui_ctx.renderer.viewport_dim.width = ppp * rect.width();
+        gui_ctx.renderer.viewport_dim.height = ppp * rect.height();
     }
 
     fn right_panel(&mut self, ui: &mut Ui, gui_ctx: &mut GuiCtx) {
@@ -132,12 +132,18 @@ impl AppState {
             ui.separator();
 
             egui::ScrollArea::vertical().show(ui, |ui| {
-                for (i, scene) in gui_ctx.scenes.get_scenes().iter().enumerate() {
+                for (i, scene) in gui_ctx.scenes.scenes.iter().enumerate() {
                     if ui.button(scene.name()).clicked() {
-                        self.selected_scene = Some(i);
+                        gui_ctx.scenes.selected_scene = i;
                     }
                 }
             });
         });
+
+        if ui.button("Unload scenes").clicked() {
+            for scene in &mut gui_ctx.scenes.scenes {
+                scene.unload();
+            }
+        }
     }
 }

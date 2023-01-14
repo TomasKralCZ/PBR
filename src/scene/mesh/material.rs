@@ -1,23 +1,25 @@
-use crate::{scene::DataBundle, ogl::TextureId};
+use std::rc::Rc;
+
+use crate::{ogl::texture::GlTexture, scene::DataBundle};
 
 use super::create_texture;
 
 /// Standard PBR material parameters
 pub struct StdPbrMaterial {
-    pub base_color_texture: Option<TextureId>,
+    pub base_color_texture: Option<Rc<GlTexture>>,
     pub base_color_factor: [f32; 4],
 
-    pub mr_texture: Option<TextureId>,
+    pub mr_texture: Option<Rc<GlTexture>>,
     pub metallic_factor: f32,
     pub roughness_factor: f32,
 
-    pub normal_texture: Option<TextureId>,
+    pub normal_texture: Option<Rc<GlTexture>>,
     pub normal_scale: f32,
 
-    pub occlusion_texture: Option<TextureId>,
+    pub occlusion_texture: Option<Rc<GlTexture>>,
     pub occlusion_strength: f32,
 
-    pub emissive_texture: Option<TextureId>,
+    pub emissive_texture: Option<Rc<GlTexture>>,
     pub emissive_factor: [f32; 3],
 }
 
@@ -78,12 +80,12 @@ impl StdPbrMaterial {
 /// Clearcoat extension parameters
 pub struct Clearcoat {
     pub intensity_factor: f32,
-    pub intensity_texture: Option<TextureId>,
+    pub intensity_texture: Option<Rc<GlTexture>>,
 
     pub roughness_factor: f32,
-    pub roughness_texture: Option<TextureId>,
+    pub roughness_texture: Option<Rc<GlTexture>>,
 
-    pub normal_texture: Option<TextureId>,
+    pub normal_texture: Option<Rc<GlTexture>>,
     pub normal_scale: f32,
 }
 

@@ -11,6 +11,8 @@ pub mod shader;
 pub mod uniform_buffer;
 /// Abstraction for working with VAOs
 pub mod vao;
+/// Abstraction for textures
+pub mod texture;
 
 // Indices of the vertex attributes
 pub const POSITION_INDEX: u32 = 0;

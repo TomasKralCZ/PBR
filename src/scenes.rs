@@ -3,7 +3,8 @@ use eyre::Result;
 use crate::{scene::Scene, util::timed_scope};
 
 pub struct Scenes {
-    models: Vec<LazyScene>,
+    pub selected_scene: usize,
+    pub scenes: Vec<LazyScene>,
 }
 
 impl Scenes {
@@ -40,42 +41,41 @@ impl Scenes {
 
         add("resources/NewSky_PolarFacilityMap.glb");
 
-        Ok(Self { models })
+        Ok(Self {
+            selected_scene: 0,
+            scenes: models,
+        })
     }
 
-    pub fn get_scene(&mut self, index: usize) -> Result<&mut Scene> {
-        self.models[index].get()
-    }
-
-    pub fn get_scenes(&self) -> &[LazyScene] {
-        &self.models
+    pub fn get_selected_scene(&mut self) -> Result<&mut Scene> {
+        self.scenes[self.selected_scene].get()
     }
 }
 
 /// Loading models takes a long time, load them lazily
 pub struct LazyScene {
     path: &'static str,
-    model: Option<Scene>,
+    scene: Option<Scene>,
 }
 
 impl LazyScene {
     fn new(path: &'static str) -> Self {
-        Self { path, model: None }
+        Self { path, scene: None }
     }
 
     fn get(&mut self) -> Result<&mut Scene> {
         // Can't use if let Some(...) because the borrow checker is angry
         // Can't use get_or_insert_with(...) because I need error handling
-        if self.model.is_some() {
-            Ok(self.model.as_mut().unwrap())
+        if self.scene.is_some() {
+            Ok(self.scene.as_mut().unwrap())
         } else {
             let path = self.path;
 
             let model = timed_scope(&format!("Loading '{path}'"), || Scene::from_gltf(path))?;
 
-            self.model = Some(model);
+            self.scene = Some(model);
 
-            Ok(self.model.as_mut().unwrap())
+            Ok(self.scene.as_mut().unwrap())
         }
     }
 
@@ -90,5 +90,9 @@ impl LazyScene {
         let end = self.path.rfind('.').unwrap_or(self.path.len());
 
         &self.path[start..end]
+    }
+
+    pub fn unload(&mut self) {
+        self.scene = None;
     }
 }

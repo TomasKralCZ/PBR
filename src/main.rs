@@ -45,9 +45,9 @@ fn main() -> Result<()> {
     gl::load_with(|name| window.window.subsystem().gl_get_proc_address(name) as _);
     ogl::init_debug();
 
-    let mut appstate = AppState::new(&window);
+    let mut appstate = AppState::new();
     let mut scenes = Scenes::init()?;
-    let mut renderer = Renderer::new()?;
+    let mut renderer = Renderer::new(&window)?;
     let mut flycam = Flycam::new(
         Vec3::new(0.2, 3., 7.5),
         0.05,
@@ -69,9 +69,7 @@ fn main() -> Result<()> {
 
         handle_inputs(&mut window.event_pump, active_cam);
 
-        if let Some(scene) = appstate.selected_scene {
-            renderer.render(scenes.get_scene(scene)?, active_cam, &appstate);
-        }
+        renderer.render(scenes.get_selected_scene()?, active_cam, &appstate);
 
         let mut gui_ctx = GuiCtx {
             scenes: &mut scenes,
