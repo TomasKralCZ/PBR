@@ -103,8 +103,8 @@ struct ShadingParams {
 vec3 getNormalFromMap(sampler2D tex, float scaleNormal, vec3 viewDir)
 {
     // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#_material_normaltextureinfo_scale
-    vec3 tangentNormal = normalize((texture(tex, vsOut.texCoords).xyz) * 2.0 - 1.0)
-        * vec3(scaleNormal, scaleNormal, 1.0);
+    vec3 tangentNormal
+        = normalize((texture(tex, vsOut.texCoords).xyz) * 2.0 - 1.0) * vec3(scaleNormal, scaleNormal, 1.0);
 
     mat3 tbn = mat3(normalize(vsOut.tangent), normalize(vsOut.bitangent), normalize(vsOut.normal));
 
@@ -113,8 +113,7 @@ vec3 getNormalFromMap(sampler2D tex, float scaleNormal, vec3 viewDir)
 #endif
 
 #ifdef CLEARCOAT
-vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway,
-    vec3 lightDir, float VoH)
+vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway, vec3 lightDir, float VoH)
 {
     float clearcoatNoH = max(dot(halfway, sp.clearcoatNormal), 0.0);
     float clearcoatNoL = max(dot(lightDir, sp.clearcoatNormal), 0.0);
@@ -138,7 +137,8 @@ vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway,
 void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 fresnel, float NoH, float NoL,
     float VoH, vec3 halfway, vec3 lightDir)
 {
-    float D = anisotropicGgxDistribution(sp.roughness, NoH, halfway, vsOut.tangent, vsOut.bitangent, anisotropy);
+    float D
+        = anisotropicGgxDistribution(sp.roughness, NoH, halfway, vsOut.tangent, vsOut.bitangent, anisotropy);
 
     float ToV = dot(vsOut.tangent, sp.viewDir);
     float BoV = dot(vsOut.bitangent, sp.viewDir);
@@ -153,8 +153,8 @@ void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 f
 }
 #endif
 
-void baseSpecularIsotropic(ShadingParams sp, inout vec3 specular, inout vec3 fresnel, float NoH,
-    float NoL, float VoH)
+void baseSpecularIsotropic(
+    ShadingParams sp, inout vec3 specular, inout vec3 fresnel, float NoH, float NoL, float VoH)
 {
     float D = ggxDistribution(NoH, sp.roughness);
     float G = smithGeometryShadowing(sp.NoV, NoL, sp.roughness);
@@ -254,9 +254,11 @@ vec3 calculateIBL(ShadingParams sp)
         float clearcoatFresnel = fresnelSchlick(DIELECTRIC_FRESNEL, sp.clearcoatNoV) * sp.clearcoatIntensity;
 
         // Apply clearcoat IBL
-        vec3 clearcoatPrefilteredLight = textureLod(prefilterMap, clearcoatReflectDir, sp.clearcoatRoughness * MAX_REFLECTION_LOD).rgb;
+        vec3 clearcoatPrefilteredLight
+            = textureLod(prefilterMap, clearcoatReflectDir, sp.clearcoatRoughness * MAX_REFLECTION_LOD).rgb;
         vec2 clearcoatDfg = texture(brdfLut, vec2(sp.clearcoatNoV, sp.clearcoatRoughness)).rg;
-        vec3 clearcoatIblSpecular = clearcoatPrefilteredLight * (clearcoatFresnel * clearcoatDfg.x + clearcoatDfg.y);
+        vec3 clearcoatIblSpecular
+            = clearcoatPrefilteredLight * (clearcoatFresnel * clearcoatDfg.x + clearcoatDfg.y);
 
         // base layer attenuation for energy compensation
         iblDiffuse *= 1.0 - clearcoatFresnel;

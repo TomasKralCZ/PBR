@@ -11,10 +11,7 @@ float radicalInverseVdC(uint bits)
 }
 
 // Based on http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
-vec2 hammersley(uint i, uint N)
-{
-    return vec2(float(i) / float(N), radicalInverseVdC(i));
-}
+vec2 hammersley(uint i, uint N) { return vec2(float(i) / float(N), radicalInverseVdC(i)); }
 
 vec3 importanceSampleGgx(vec2 Xi, vec3 N, float roughness)
 {

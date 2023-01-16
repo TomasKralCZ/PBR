@@ -1,13 +1,7 @@
 
-vec3 fresnelSchlick(vec3 f0, float VoH)
-{
-    return f0 + (1. - f0) * pow(clamp(1. - VoH, 0.0, 1.0), 5.);
-}
+vec3 fresnelSchlick(vec3 f0, float VoH) { return f0 + (1. - f0) * pow(clamp(1. - VoH, 0.0, 1.0), 5.); }
 
-float fresnelSchlick(float f0, float VoH)
-{
-    return f0 + (1. - f0) * pow(clamp(1. - VoH, 0.0, 1.0), 5.);
-}
+float fresnelSchlick(float f0, float VoH) { return f0 + (1. - f0) * pow(clamp(1. - VoH, 0.0, 1.0), 5.); }
 
 vec3 fresnelSchlickRoughness(float VoH, vec3 f0, float roughness)
 {
@@ -44,8 +38,8 @@ float smithGeometryShadowing(float NoV, float NoL, float roughness)
 
 #ifdef ANISOTROPY
 // Burley, “Physically-Based Shading at Disney.”
-float anisotropicGgxDistribution(float roughness, float NoH, vec3 halfway, vec3 tangent,
-    vec3 bitangent, float anisotropy)
+float anisotropicGgxDistribution(
+    float roughness, float NoH, vec3 halfway, vec3 tangent, vec3 bitangent, float anisotropy)
 {
     // Remapping from: Kulla and Conty, “Revisiting Physically Based Shading at Imageworks.”
     float tRoughness = max(roughness * (1.0 + anisotropy), ROUGHNESS_MIN);
@@ -54,9 +48,8 @@ float anisotropicGgxDistribution(float roughness, float NoH, vec3 halfway, vec3 
     float ToH = dot(tangent, halfway);
     float BoH = dot(bitangent, halfway);
 
-    float denom = ((ToH * ToH) / (tRoughness * tRoughness))
-        + ((BoH * BoH) / (bRoughness * bRoughness))
-        + (NoH * NoH);
+    float denom
+        = ((ToH * ToH) / (tRoughness * tRoughness)) + ((BoH * BoH) / (bRoughness * bRoughness)) + (NoH * NoH);
 
     denom = denom * denom;
 
@@ -64,8 +57,8 @@ float anisotropicGgxDistribution(float roughness, float NoH, vec3 halfway, vec3 
 }
 
 // Taken from: Guy and Agopian, “Physically Based Rendering in Filament.”
-float anisotropicVSmithGgxCorrelated(float roughness, float NoV, float ToV, float BoV, float ToL,
-    float BoL, float NoL, float anisotropy)
+float anisotropicVSmithGgxCorrelated(
+    float roughness, float NoV, float ToV, float BoV, float ToL, float BoL, float NoL, float anisotropy)
 {
     // Remapping from: Kulla and Conty, “Revisiting Physically Based Shading at Imageworks.”
     float tRoughness = max(roughness * (1.0 + anisotropy), ROUGHNESS_MIN);
