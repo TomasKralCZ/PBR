@@ -6,6 +6,7 @@ use eyre::Result;
 
 pub struct Shaders {
     pub pbr_shaders: ShaderPermutations<PbrDefines>,
+    pub data_based_shaders: ShaderPermutations<PbrDefines>,
     pub light_shader: Shader,
     pub cubemap_shader: Shader,
 }
@@ -56,12 +57,14 @@ impl ShaderDefines for PbrDefines {
 
 impl Shaders {
     pub fn new() -> Result<Self> {
-        let pbr = ShaderPermutations::new("shaders/basic.vert", "shaders/pbr.frag")?;
+        let pbr_shaders = ShaderPermutations::new("shaders/basic.vert", "shaders/pbr.frag")?;
+        let data_based_shaders = ShaderPermutations::new("shaders/basic.vert", "shaders/data_driven.frag")?;
         let light_shader = Shader::with_files("shaders/basic.vert", "shaders/light.frag")?;
         let cubemap_shader = Shader::with_files("shaders/cubemap.vert", "shaders/cubemap.frag")?;
 
         Ok(Self {
-            pbr_shaders: pbr,
+            pbr_shaders,
+            data_based_shaders,
             light_shader,
             cubemap_shader,
         })

@@ -7,8 +7,9 @@ use gl::types::GLenum;
 use image::codecs::hdr;
 
 use crate::ogl::shader::Shader;
+use crate::ogl::ssbo::Ssbo;
 use crate::ogl::texture::GlTexture;
-use crate::ogl::TextureId;
+use crate::ogl::{self, TextureId};
 
 const CUBEMAP_SIZE: i32 = 1024; // SYNC this with prefilter.comp resolution !
 const CUBEMAP_FACES: u32 = 6;
@@ -17,29 +18,53 @@ const PREFILTER_MAP_SIZE: i32 = 256;
 const PREFILTER_MAP_ROUGHNES_LEVELS: i32 = 7; // SYNC this with pbr.MAX_REFLECTION_LOD ! (minus 1)
 const BRDF_LUT_SIZE: i32 = 512;
 
-pub struct Probe {
-    pub textures: ProbeTextures,
+pub struct Ibl {
+    pub textures: IblTextures,
 }
 
-pub struct ProbeTextures {
+pub struct IblTextures {
     pub irradiance_tex_id: GlTexture,
     pub prefilter_tex_id: GlTexture,
     pub brdf_lut_id: GlTexture,
 }
 
-impl Probe {
+impl Ibl {
     pub fn from_cubemap(cubemap_tex_id: &GlTexture) -> Result<Self> {
         let textures = Self::compute_ibl(cubemap_tex_id.id)?;
 
         Ok(Self { textures })
     }
 
-    fn compute_ibl(cubemap_tex_id: TextureId) -> Result<ProbeTextures> {
+    pub fn compute_ibl_raw_brdf(brdf_ssbo: &Ssbo<{ ogl::BRDF_DATA_BINDING }>) -> Result<GlTexture> {
+        // TODO(high): HACK
+        let cubemap = load_cubemap_from_equi("resources/IBL/rustig_koppie_puresky_4k.hdr")?;
+
+        let tex = create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F);
+        let shader = Shader::comp_with_path("shaders/ibl/raw_brdf_integration.comp")?;
+
+        shader.use_shader(|| unsafe {
+            gl::BindTextureUnit(0, cubemap.id);
+            brdf_ssbo.bind();
+            gl::BindImageTexture(1, tex.id, 0, gl::TRUE, 0, gl::WRITE_ONLY, gl::RGBA32F);
+
+            gl::DispatchCompute(
+                IRRADIANCE_MAP_SIZE as _,
+                IRRADIANCE_MAP_SIZE as _,
+                CUBEMAP_FACES,
+            );
+
+            gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        });
+
+        Ok(tex)
+    }
+
+    fn compute_ibl(cubemap_tex_id: TextureId) -> Result<IblTextures> {
         let irradiance_tex_id = Self::compute_irradiance_map(cubemap_tex_id)?;
         let prefilter_tex_id = Self::compute_prefilter_map(cubemap_tex_id)?;
         let brdf_lut_id = Self::brdf_integration()?;
 
-        let textures = ProbeTextures {
+        let textures = IblTextures {
             irradiance_tex_id,
             prefilter_tex_id,
             brdf_lut_id,

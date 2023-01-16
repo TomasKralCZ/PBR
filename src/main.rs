@@ -3,18 +3,19 @@
 //! `main` function is the entry-point
 use std::{thread, time::Duration};
 
-use app::AppState;
+use app_settings::AppSettings;
 use camera::{Camera, CameraTyp, Flycam, Orbitalcam};
 use eyre::Result;
 use glam::Vec3;
 use gui::GuiCtx;
 use renderer::Renderer;
-use scenes::Scenes;
+use resources::Resources;
 use sdl2::{keyboard::Scancode, EventPump};
 
+use util::RcMut;
 use window::AppWindow;
 
-mod app;
+mod app_settings;
 
 /// A module for working with a basic free camera.
 mod camera;
@@ -34,9 +35,11 @@ mod ogl;
 /// Handles window creation and egui boilerplate.
 mod window;
 
-mod scenes;
+mod resources;
 
 mod util;
+
+mod brdf_raw;
 
 /// Creates the window, configures OpenGL, sets up the scene and begins the render loop.
 fn main() -> Result<()> {
@@ -45,9 +48,15 @@ fn main() -> Result<()> {
     gl::load_with(|name| window.window.subsystem().gl_get_proc_address(name) as _);
     ogl::init_debug();
 
-    let mut appstate = AppState::new();
-    let mut scenes = Scenes::init()?;
-    let mut renderer = Renderer::new(&window)?;
+    let app_settings = RcMut::new(AppSettings::new(&window));
+    let resources = RcMut::new(Resources::init()?);
+    let mut renderer = Renderer::new(app_settings.clone())?;
+
+    let mut gui_ctx = GuiCtx {
+        resources: resources.clone(),
+        app_settings: app_settings.clone(),
+    };
+
     let mut flycam = Flycam::new(
         Vec3::new(0.2, 3., 7.5),
         0.05,
@@ -57,28 +66,19 @@ fn main() -> Result<()> {
     );
 
     let mut orbitalcam = Orbitalcam::new(2., 0.05, window.width, window.height);
-    let mut cam_typ = CameraTyp::Orbital;
 
     'render_loop: loop {
         window.begin_frame();
 
-        let active_cam: &mut dyn Camera = match cam_typ {
+        let active_cam: &mut dyn Camera = match app_settings.get().camera_typ {
             CameraTyp::Flycam => &mut flycam,
             CameraTyp::Orbital => &mut orbitalcam,
         };
 
         handle_inputs(&mut window.event_pump, active_cam);
+        renderer.render(active_cam, resources.clone())?;
 
-        renderer.render(scenes.get_selected_scene()?, active_cam, &appstate);
-
-        let mut gui_ctx = GuiCtx {
-            scenes: &mut scenes,
-            camera: active_cam,
-            cam_typ: &mut cam_typ,
-            renderer: &mut renderer,
-        };
-
-        appstate.create_gui(&mut gui_ctx, &mut window.egui_ctx);
+        gui_ctx.create_gui(&mut window.egui_ctx);
 
         let should_quit = window.end_frame();
         if should_quit {

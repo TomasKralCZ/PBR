@@ -7,12 +7,14 @@ use std::{
 pub mod gl_buffer;
 /// Abstraction for working with OpenGL Shaders.
 pub mod shader;
+/// Abstraction for shader storage buffer objects (SSBOs)
+pub mod ssbo;
+/// Abstraction for textures
+pub mod texture;
 /// Abstraction for working with OpenGL Uniform Buffers.
 pub mod uniform_buffer;
 /// Abstraction for working with VAOs
 pub mod vao;
-/// Abstraction for textures
-pub mod texture;
 
 // Indices of the vertex attributes
 pub const POSITION_INDEX: u32 = 0;
@@ -34,12 +36,14 @@ pub const CLEARCOAT_NORMAL_PORT: u32 = 7;
 pub const IRRADIANCE_PORT: u32 = 8;
 pub const PREFILTER_PORT: u32 = 9;
 pub const BRDF_PORT: u32 = 10;
+pub const RAW_BRDF_PORT: u32 = 11;
 
-// Uniform buffer bindings
+// Buffer bindings
 pub const TRANSFORM_BINDING: u32 = 0;
 pub const PBR_MATERIAL_BINDING: u32 = 1;
 pub const LIGHTNING_BINDING: u32 = 2;
 pub const SETTINGS_BINDING: u32 = 3;
+pub const BRDF_DATA_BINDING: u32 = 10;
 
 pub type TextureId = u32;
 pub type ProgramId = u32;

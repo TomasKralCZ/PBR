@@ -3,14 +3,14 @@ use crate::ogl::{self, uniform_buffer::UniformBufferElement};
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(C)]
 /// Runtime shader settings
-pub struct Settings {
+pub struct PbrSettings {
     // bools are 4-byte in GLSL std140...
     clearcoat_enabled: u32,
     direct_light_enabled: u32,
     ibl_enabled: u32,
 }
 
-impl Settings {
+impl PbrSettings {
     pub fn new() -> Self {
         Self {
             clearcoat_enabled: 1,
@@ -44,6 +44,6 @@ impl Settings {
     }
 }
 
-impl UniformBufferElement for Settings {
+impl UniformBufferElement for PbrSettings {
     const BINDING: u32 = ogl::SETTINGS_BINDING;
 }

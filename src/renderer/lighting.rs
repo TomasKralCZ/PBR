@@ -24,7 +24,7 @@ impl Lighting {
             Vec4::ZERO,
         ];
 
-        let light_color = [Vec4::ZERO, Vec4::new(0., 0., 1., 0.), Vec4::ONE, Vec4::ONE];
+        let light_color = [Vec4::ZERO, Vec4::new(1., 1., 1., 0.), Vec4::ONE, Vec4::ONE];
 
         Self {
             cam_pos,
