@@ -6,10 +6,12 @@ use eyre::Result;
 use gl::types::GLenum;
 use image::codecs::hdr;
 
+use crate::brdf_raw::BrdfType;
+use crate::ogl::shader::shader_permutations::ShaderDefines;
 use crate::ogl::shader::Shader;
 use crate::ogl::ssbo::Ssbo;
 use crate::ogl::texture::GlTexture;
-use crate::ogl::{self, TextureId};
+use crate::ogl::TextureId;
 
 const CUBEMAP_SIZE: i32 = 1024; // SYNC this with prefilter.comp resolution !
 const CUBEMAP_FACES: u32 = 6;
@@ -35,12 +37,17 @@ impl Ibl {
         Ok(Self { textures })
     }
 
-    pub fn compute_ibl_raw_brdf(brdf_ssbo: &Ssbo<{ ogl::BRDF_DATA_BINDING }>) -> Result<GlTexture> {
-        // TODO(high): HACK
-        let cubemap = load_cubemap_from_equi("resources/IBL/rustig_koppie_puresky_4k.hdr")?;
-
+    pub fn compute_ibl_brdf<const BINDING: u32>(
+        brdf_ssbo: &Ssbo<BINDING>,
+        cubemap: &GlTexture,
+        brdf_type: BrdfType,
+    ) -> Result<GlTexture> {
         let tex = create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F);
-        let shader = Shader::comp_with_path("shaders/ibl/raw_brdf_integration.comp")?;
+        // TODO: shader permutations abstraction for compute shaders
+        let shader = Shader::comp_with_path_defines(
+            "shaders_stitched/raw_brdf_integration.comp",
+            &brdf_type.defines(),
+        )?;
 
         shader.use_shader(|| unsafe {
             gl::BindTextureUnit(0, cubemap.id);
@@ -76,7 +83,7 @@ impl Ibl {
     /// Computes the diffuse irradiance map from the cubemap
     fn compute_irradiance_map(cubemap_tex_id: u32) -> Result<GlTexture> {
         let irradiance_tex = create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F);
-        let irradiance_shader = Shader::comp_with_path("shaders/ibl/irradiance.comp")?;
+        let irradiance_shader = Shader::comp_with_path("shaders_stitched/irradiance.comp")?;
 
         irradiance_shader.use_shader(|| unsafe {
             gl::BindTextureUnit(0, cubemap_tex_id);
@@ -115,7 +122,8 @@ impl Ibl {
             gl::TextureParameteri(brdf_lut.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
         };
 
-        let brdf_integration_shader = Shader::comp_with_path("shaders/ibl/brdf_integration.comp")?;
+        let brdf_integration_shader =
+            Shader::comp_with_path("shaders_stitched/brdf_integration.comp")?;
 
         brdf_integration_shader.use_shader(|| unsafe {
             gl::BindImageTexture(0, brdf_lut.id, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::RG32F);
@@ -146,7 +154,7 @@ impl Ibl {
             gl::TextureParameteri(prefilter_tex.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
         }
 
-        let prefilter_shader = Shader::comp_with_path("shaders/ibl/prefilter.comp")?;
+        let prefilter_shader = Shader::comp_with_path("shaders_stitched/prefilter.comp")?;
         prefilter_shader.use_shader(|| unsafe {
             gl::BindTextureUnit(0, cubemap_tex_id);
 
@@ -182,7 +190,7 @@ pub fn load_cubemap_from_equi(path: &str) -> Result<GlTexture> {
     let equimap = load_hdr_image(path)?;
     let equi_tex = create_equi_texture(equimap);
     let cubemap_tex = create_cubemap_texture(CUBEMAP_SIZE, gl::RGBA32F);
-    let equi_to_cubemap_shader = Shader::comp_with_path("shaders/ibl/equi_to_cubemap.comp")?;
+    let equi_to_cubemap_shader = Shader::comp_with_path("shaders_stitched/equi_to_cubemap.comp")?;
 
     equi_to_cubemap_shader.use_shader(|| unsafe {
         gl::BindTextureUnit(0, equi_tex.id);

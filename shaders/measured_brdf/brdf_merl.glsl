@@ -1,4 +1,6 @@
 
+// MERL API implementation
+
 // Copyright 2005 Mitsubishi Electric Research Laboratories All Rights Reserved.
 
 // Permission to use, copy and modify this software and its documentation without
@@ -7,7 +9,7 @@
 
 // To request permission to incorporate this software into commercial products contact:
 // Vice President of Marketing and Business Development;
-// Mitsubishi Electric Research Laboratories (MERL), 201 Broadway, Cambridge, MA 02139 or
+// Mitsubishi Electric Research Laboratories (MERL), 201 Broadway, Cambridge, MA 02139 or 
 // <license@merl.com>.
 
 // IN NO EVENT SHALL MERL BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL,
@@ -19,10 +21,6 @@
 // HEREUNDER IS ON AN "AS IS" BASIS, AND MERL HAS NO OBLIGATIONS TO PROVIDE MAINTENANCE, SUPPORT,
 // UPDATES, ENHANCEMENTS OR MODIFICATIONS.
 
-// The original code was C++, this a very close GLSL translation done by me
-
-layout(std430, binding = 10) buffer BrdfData { double brdfTable[]; };
-
 #define BRDF_SAMPLING_RES_THETA_H 90
 #define BRDF_SAMPLING_RES_THETA_D 90
 #define BRDF_SAMPLING_RES_PHI_D 360
@@ -30,78 +28,6 @@ layout(std430, binding = 10) buffer BrdfData { double brdfTable[]; };
 #define RED_SCALE (1.0 / 1500.0)
 #define GREEN_SCALE (1.15 / 1500.0)
 #define BLUE_SCALE (1.66 / 1500.0)
-#define D_PI 3.1415926535897932384626433832795
-
-// rotate vector along one axis
-void rotate_vector(vec3 vector, vec3 axis, float angle, out vec3 res)
-{
-    float temp;
-    float cos_ang = cos(angle);
-    float sin_ang = sin(angle);
-
-    res[0] = vector[0] * cos_ang;
-    res[1] = vector[1] * cos_ang;
-    res[2] = vector[2] * cos_ang;
-
-    temp = axis[0] * vector[0] + axis[1] * vector[1] + axis[2] * vector[2];
-    temp = temp * (1.0 - cos_ang);
-
-    res[0] += axis[0] * temp;
-    res[1] += axis[1] * temp;
-    res[2] += axis[2] * temp;
-
-    vec3 cross_vec = cross(axis, vector);
-
-    res[0] += cross_vec[0] * sin_ang;
-    res[1] += cross_vec[1] * sin_ang;
-    res[2] += cross_vec[2] * sin_ang;
-}
-
-// convert standard coordinates to half vector/difference vector coordinates (Rusinkiewicz’s coordinate
-// system)
-void std_coords_to_half_diff_coords(float theta_in, float phi, float theta_out, float phi_out,
-    out float theta_half, out float phi_half, out float theta_diff, out float phi_diff)
-{
-    // compute in vector
-    float in_vec_z = cos(theta_in);
-    float proj_in_vec = sin(theta_in);
-    float in_vec_x = proj_in_vec * cos(phi);
-    float in_vec_y = proj_in_vec * sin(phi);
-    vec3 inDir = vec3(in_vec_x, in_vec_y, in_vec_z);
-    normalize(inDir);
-
-    // compute out vector
-    float out_vec_z = cos(theta_out);
-    float proj_out_vec = sin(theta_out);
-    float out_vec_x = proj_out_vec * cos(phi_out);
-    float out_vec_y = proj_out_vec * sin(phi_out);
-    vec3 outDir = vec3(out_vec_x, out_vec_y, out_vec_z);
-    normalize(outDir);
-
-    // compute halfway vector
-    float half_x = (in_vec_x + out_vec_x) / 2.0;
-    float half_y = (in_vec_y + out_vec_y) / 2.0;
-    float half_z = (in_vec_z + out_vec_z) / 2.0;
-    vec3 halfway = vec3(half_x, half_y, half_z);
-    normalize(halfway);
-
-    // compute  theta_half, fi_half
-    theta_half = acos(halfway[2]);
-    phi_half = atan(halfway[1], halfway[0]);
-
-    vec3 bi_normal = vec3(0.0, 1.0, 0.0);
-    vec3 normal = vec3(0.0, 0.0, 1.0);
-    vec3 temp = vec3(0.0);
-    vec3 diff = vec3(0.0);
-
-    // compute diff vector
-    rotate_vector(inDir, normal, -phi_half, temp);
-    rotate_vector(temp, bi_normal, -theta_half, diff);
-
-    // compute  theta_diff, fi_diff
-    theta_diff = acos(diff[2]);
-    phi_diff = atan(diff[1], diff[0]);
-}
 
 // Lookup theta_half index
 // This is a non-linear mapping!
@@ -113,7 +39,7 @@ int theta_half_index(float theta_half)
         return 0;
     }
 
-    float theta_half_deg = ((theta_half / (D_PI / 2.0)) * BRDF_SAMPLING_RES_THETA_H);
+    float theta_half_deg = ((theta_half / (PI / 2.0)) * BRDF_SAMPLING_RES_THETA_H);
     float temp = theta_half_deg * BRDF_SAMPLING_RES_THETA_H;
     temp = sqrt(temp);
     int ret_val = int(temp);
@@ -134,7 +60,7 @@ int theta_half_index(float theta_half)
 // Out: [0 .. 89]
 int theta_diff_index(float theta_diff)
 {
-    int tmp = int(theta_diff / (D_PI * 0.5) * BRDF_SAMPLING_RES_THETA_D);
+    int tmp = int(theta_diff / (PI * 0.5) * BRDF_SAMPLING_RES_THETA_D);
 
     if (tmp < 0) {
         return 0;
@@ -149,14 +75,14 @@ int theta_diff_index(float theta_diff)
 int phi_diff_index(float phi_diff)
 {
     // Because of reciprocity, the BRDF is unchanged under
-    // phi_diff -> phi_diff + D_PI
+    // phi_diff -> phi_diff + PI
     if (phi_diff < 0.0) {
-        phi_diff += D_PI;
+        phi_diff += PI;
     }
 
     // In: phi_diff in [0 .. pi]
     // Out: tmp in [0 .. 179]
-    int tmp = int(phi_diff / D_PI * BRDF_SAMPLING_RES_PHI_D / 2);
+    int tmp = int(phi_diff / PI * BRDF_SAMPLING_RES_PHI_D / 2);
     if (tmp < 0) {
         return 0;
     } else if (tmp < BRDF_SAMPLING_RES_PHI_D / 2 - 1) {
@@ -165,36 +91,6 @@ int phi_diff_index(float phi_diff)
         return BRDF_SAMPLING_RES_PHI_D / 2 - 1;
     }
 }
-
-vec3 lookup_brdf(float theta_in, float phi_in, float theta_out, float phi_out)
-{
-    // Convert to halfangle / difference angle coordinates
-    float theta_half, phi_half, theta_diff, phi_diff;
-    std_coords_to_half_diff_coords(
-        theta_in, phi_in, theta_out, phi_out, theta_half, phi_half, theta_diff, phi_diff);
-
-    // Find index.
-    // Note that phi_half is ignored, since isotropic BRDFs are assumed
-    int ind = phi_diff_index(phi_diff) + theta_diff_index(theta_diff) * BRDF_SAMPLING_RES_PHI_D / 2
-        + theta_half_index(theta_half) * BRDF_SAMPLING_RES_PHI_D / 2 * BRDF_SAMPLING_RES_THETA_D;
-
-    double red = brdfTable[ind] * RED_SCALE;
-    double green
-        = brdfTable[ind + BRDF_SAMPLING_RES_THETA_H * BRDF_SAMPLING_RES_THETA_D * BRDF_SAMPLING_RES_PHI_D / 2]
-        * GREEN_SCALE;
-    double blue
-        = brdfTable[ind + BRDF_SAMPLING_RES_THETA_H * BRDF_SAMPLING_RES_THETA_D * BRDF_SAMPLING_RES_PHI_D]
-        * BLUE_SCALE;
-
-    if (red < 0.0 || green < 0.0 || blue < 0.0) {
-        // error
-        return vec3(0, theta_out, phi_out);
-    }
-
-    return vec3(float(red), float(green), float(blue));
-}
-
-// Taken from the brdf-explorer
 
 /*
 Copyright Disney Enterprises, Inc. All rights reserved.
@@ -240,7 +136,8 @@ To the extent permitted under your local laws, the contributors exclude the
 implied warranties of merchantability, fitness for a particular purpose and non-
 infringement.
 */
-vec3 lookup_brdf(vec3 toLight, vec3 toViewer, vec3 normal, vec3 tangent, vec3 bitangent)
+
+vec3 lookup_brdf_merl(vec3 toLight, vec3 toViewer, vec3 normal, vec3 tangent, vec3 bitangent)
 {
     vec3 H = normalize(toLight + toViewer);
     float theta_H = acos(clamp(dot(normal, H), 0, 1));
@@ -269,6 +166,6 @@ vec3 lookup_brdf(vec3 toLight, vec3 toViewer, vec3 normal, vec3 tangent, vec3 bi
         = ind + BRDF_SAMPLING_RES_THETA_H * BRDF_SAMPLING_RES_THETA_D * BRDF_SAMPLING_RES_PHI_D / 2;
     int blueIndex = ind + BRDF_SAMPLING_RES_THETA_H * BRDF_SAMPLING_RES_THETA_D * BRDF_SAMPLING_RES_PHI_D;
 
-    return vec3(brdfTable[redIndex] * RED_SCALE, brdfTable[greenIndex] * GREEN_SCALE,
-        brdfTable[blueIndex] * BLUE_SCALE);
+    return vec3(merlBrdfTable[redIndex] * RED_SCALE, merlBrdfTable[greenIndex] * GREEN_SCALE,
+        merlBrdfTable[blueIndex] * BLUE_SCALE);
 }

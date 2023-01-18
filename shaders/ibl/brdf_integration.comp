@@ -1,8 +1,8 @@
 #version 460 core
 
-//#import shaders/consts.glsl
-//#import shaders/ibl/brdf_sampling.glsl
-//#import shaders/brdf.glsl
+// {% include "consts.glsl" %}
+// {% include "ibl/brdf_sampling.glsl" %}
+// {% include "brdf.glsl" %}
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 

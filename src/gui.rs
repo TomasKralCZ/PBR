@@ -1,6 +1,8 @@
 use egui::{CtxRef, RichText, Ui};
 
-use crate::{camera::CameraTyp, resources::Resources, util::RcMut, AppSettings};
+use crate::{
+    app_settings::MaterialSrc, camera::CameraTyp, resources::Resources, util::RcMut, AppSettings,
+};
 
 /// All state that needs to be rendered in the GUI
 pub struct GuiCtx {
@@ -66,12 +68,58 @@ impl GuiCtx {
             ));
             ui.separator();
 
-            ui.checkbox(
-                &mut app_settings.should_override_material,
-                "Override material",
-            );
+            ui.add(egui::Label::new(RichText::new("Material source").strong()));
+            ui.separator();
+            ui.vertical(|ui| {
+                use MaterialSrc::*;
+                let selected = &mut app_settings.material_src;
 
-            ui.add_enabled_ui(app_settings.should_override_material, |ui| {
+                ui.radio_value(selected, Gltf, Gltf.to_str());
+                ui.radio_value(selected, PbrOverride, PbrOverride.to_str());
+                ui.radio_value(selected, MerlBrdf, MerlBrdf.to_str());
+                ui.radio_value(selected, MitBrdf, MitBrdf.to_str());
+                ui.radio_value(selected, UtiaBrdf, UtiaBrdf.to_str());
+            });
+
+            ui.separator();
+
+            Self::right_panel_material_override(ui, &mut app_settings);
+        });
+
+        ui.group(|ui| {
+            ui.add(egui::Label::new(
+                RichText::new("PBR Render settings").heading().strong(),
+            ));
+            ui.separator();
+
+            let mut clearcoat_enabled = app_settings.pbr_settings.clearcoat_enabled();
+            let mut direct_light_enabled = app_settings.pbr_settings.direct_light_enabled();
+            let mut ibl_enabled = app_settings.pbr_settings.ibl_enabled();
+
+            ui.checkbox(&mut clearcoat_enabled, "Clearcoat enabled");
+            ui.checkbox(&mut direct_light_enabled, "Direct light enabled");
+            ui.checkbox(&mut ibl_enabled, "IBL enabled");
+
+            app_settings
+                .pbr_settings
+                .set_clearcoat_enabled(clearcoat_enabled);
+            app_settings
+                .pbr_settings
+                .set_direct_light_enabled(direct_light_enabled);
+            app_settings.pbr_settings.set_ibl_enabled(ibl_enabled);
+        });
+    }
+
+    fn right_panel_material_override(
+        ui: &mut Ui,
+        app_settings: &mut std::cell::RefMut<AppSettings>,
+    ) {
+        ui.add_enabled_ui(
+            app_settings.material_src == MaterialSrc::PbrOverride,
+            |ui| {
+                ui.add(egui::Label::new(
+                    RichText::new("Material override").strong(),
+                ));
                 ui.separator();
 
                 ui.color_edit_button_rgba_unmultiplied(
@@ -104,72 +152,84 @@ impl GuiCtx {
                     .text("Anisotropy")
                     .smart_aim(false),
                 );
-            });
-        });
-
-        ui.group(|ui| {
-            ui.add(egui::Label::new(
-                RichText::new("PBR Render settings").heading().strong(),
-            ));
-            ui.separator();
-
-            let mut clearcoat_enabled = app_settings.pbr_settings.clearcoat_enabled();
-            let mut direct_light_enabled = app_settings.pbr_settings.direct_light_enabled();
-            let mut ibl_enabled = app_settings.pbr_settings.ibl_enabled();
-
-            ui.checkbox(&mut clearcoat_enabled, "Clearcoat enabled");
-            ui.checkbox(&mut direct_light_enabled, "Direct light enabled");
-            ui.checkbox(&mut ibl_enabled, "IBL enabled");
-
-            app_settings
-                .pbr_settings
-                .set_clearcoat_enabled(clearcoat_enabled);
-            app_settings
-                .pbr_settings
-                .set_direct_light_enabled(direct_light_enabled);
-            app_settings.pbr_settings.set_ibl_enabled(ibl_enabled);
-        });
-
-        ui.group(|ui| {
-            ui.add(egui::Label::new(
-                RichText::new("Data-driven rendering").heading().strong(),
-            ));
-            ui.separator();
-
-            ui.checkbox(&mut app_settings.data_driven_rendering, "Enabled");
-        });
+            },
+        );
     }
 
     fn left_panel(&mut self, ui: &mut Ui) {
         let mut resources = self.resources.get_mut();
         let mut app_settings = self.app_settings.get_mut();
 
+        let height = ui.available_height() / 4.;
+
         ui.group(|ui| {
             ui.add(egui::Label::new(RichText::new("Scenes").heading().strong()));
             ui.separator();
 
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for (i, scene) in resources.scenes.iter().enumerate() {
-                    if ui.button(scene.name()).clicked() {
-                        app_settings.selected_scene = i;
+            egui::ScrollArea::vertical()
+                .max_height(height)
+                .id_source("scenes_scroll")
+                .show(ui, |ui| {
+                    for (i, scene) in resources.scenes.iter().enumerate() {
+                        if ui.button(scene.name()).clicked() {
+                            app_settings.selected_scene = i;
+                        }
                     }
-                }
-            });
+                });
         });
 
         ui.group(|ui| {
             ui.add(egui::Label::new(
-                RichText::new("BRDF data").heading().strong(),
+                RichText::new("MERL BRDFs").heading().strong(),
             ));
             ui.separator();
 
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                for (i, brdf) in resources.brdfs.iter().enumerate() {
-                    if ui.button(brdf.name()).clicked() {
-                        app_settings.selected_brdf = i;
+            egui::ScrollArea::vertical()
+                .max_height(height)
+                .id_source("merl_scroll")
+                .show(ui, |ui| {
+                    for (i, brdf) in resources.merl_brdfs.iter().enumerate() {
+                        if ui.button(brdf.name()).clicked() {
+                            app_settings.selected_merl_brdf = i;
+                        }
                     }
-                }
-            });
+                });
+        });
+
+        ui.group(|ui| {
+            ui.add(egui::Label::new(
+                RichText::new("MIT CSAIL BRDFs").heading().strong(),
+            ));
+            ui.separator();
+
+            egui::ScrollArea::vertical()
+                .max_height(height)
+                .id_source("mit_scroll")
+                .show(ui, |ui| {
+                    for (i, brdf) in resources.mit_brdfs.iter().enumerate() {
+                        if ui.button(brdf.name()).clicked() {
+                            app_settings.selected_mit_brdf = i;
+                        }
+                    }
+                });
+        });
+
+        ui.group(|ui| {
+            ui.add(egui::Label::new(
+                RichText::new("UTIA BRDFs").heading().strong(),
+            ));
+            ui.separator();
+
+            egui::ScrollArea::vertical()
+                .max_height(height)
+                .id_source("utia_scroll")
+                .show(ui, |ui| {
+                    for (i, brdf) in resources.utia_brdfs.iter().enumerate() {
+                        if ui.button(brdf.name()).clicked() {
+                            app_settings.selected_utia_brdf = i;
+                        }
+                    }
+                });
         });
 
         if ui.button("Unload resources").clicked() {

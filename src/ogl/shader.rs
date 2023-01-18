@@ -61,7 +61,7 @@ impl Shader {
     }
 
     /// Creates a new compute shader from the path
-    pub fn comp_with_path(comp_path: &str) -> Result<Self> {
+    pub fn comp_with_path_defines(comp_path: &str, defines: &[&str]) -> Result<Self> {
         let mut comp_src = String::from_utf8(
             fs::read(comp_path).wrap_err("Couldn't load the compute shader file")?,
         )?;
@@ -69,10 +69,15 @@ impl Shader {
         // Add null terminator !
         comp_src.push('\0');
 
-        let cs = Self::compile_shader(&mut comp_src, &[], gl::COMPUTE_SHADER)?;
+        let cs = Self::compile_shader(&mut comp_src, defines, gl::COMPUTE_SHADER)?;
         let program_id = Self::create_shader_program(&[cs])?;
 
         Ok(Self { program_id })
+    }
+
+    /// Creates a new compute shader from the path
+    pub fn comp_with_path(comp_path: &str) -> Result<Self> {
+        Self::comp_with_path_defines(comp_path, &[])
     }
 
     fn compile_shader(src: &mut String, defines: &[&str], typ: GLenum) -> Result<ShaderId> {
@@ -80,14 +85,16 @@ impl Shader {
         src.push('\0');
 
         // Preprocessing steps
-        Self::handle_imports(src)?;
-
         if !defines.is_empty() {
             Self::handle_defines(src, defines)?;
         }
 
-        Self::compile_shader_glsl(src.as_bytes(), typ)
-            .wrap_err_with(|| format!("Error compiling shader, defines: '{:?}'", defines))
+        Self::compile_shader_glsl(src.as_bytes(), typ).wrap_err_with(|| {
+            format!(
+                "Error compiling shader, defines: '{:?}, src: {}'",
+                defines, src
+            )
+        })
     }
 
     /// Tries to compile a shader and checks for compilation errors.
@@ -161,25 +168,6 @@ impl Shader {
         Ok(())
     }
 
-    const IMPORT_STR: &'static str = "//#import ";
-
-    fn handle_imports(src: &mut String) -> Result<()> {
-        while let Some(i) = src.find(Self::IMPORT_STR) {
-            let path = src[(i + Self::IMPORT_STR.len())..]
-                .split_whitespace()
-                .next()
-                .ok_or(eyre!("invalid #import path"))?;
-
-            let import_src =
-                String::from_utf8(fs::read(path).wrap_err("Couldn't load the import file")?)?;
-
-            src.replace_range(i..i + Self::IMPORT_STR.len(), "//");
-            src.insert_str(i, &import_src);
-        }
-
-        Ok(())
-    }
-
     fn handle_defines(src: &mut String, defines: &[&str]) -> Result<()> {
         if let Some(index) = src.find("//#defines") {
             for define in defines {
@@ -188,7 +176,10 @@ impl Shader {
 
             Ok(())
         } else {
-            Err(eyre!("Couldn't find //#defines in shader source"))
+            Err(eyre!(
+                "Couldn't find //#defines in shader source\n src: {}",
+                src
+            ))
         }
     }
 

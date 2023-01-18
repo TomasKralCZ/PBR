@@ -1,6 +1,6 @@
 #version 460 core
 
-//#import shaders/tools/tonemap.glsl
+// {% include "tools/tonemap.glsl" %}
 
 out vec4 FragColor;
 

@@ -1,7 +1,7 @@
 #version 460 core
 
-//#import shaders/consts.glsl
-//#import shaders/ibl/cubemap_to_xyz.glsl
+// {% include "consts.glsl" %}
+// {% include "ibl/cubemap_to_xyz.glsl" %}
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 

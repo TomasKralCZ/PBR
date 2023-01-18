@@ -43,7 +43,9 @@ pub const TRANSFORM_BINDING: u32 = 0;
 pub const PBR_MATERIAL_BINDING: u32 = 1;
 pub const LIGHTNING_BINDING: u32 = 2;
 pub const SETTINGS_BINDING: u32 = 3;
-pub const BRDF_DATA_BINDING: u32 = 10;
+pub const BRDF_MERL_BINDING: u32 = 10;
+pub const BRDF_MIT_BINDING: u32 = 11;
+pub const BRDF_UTIA_BINDING: u32 = 12;
 
 pub type TextureId = u32;
 pub type ProgramId = u32;

@@ -45,19 +45,15 @@ impl<T: ShaderDefines> ShaderPermutations<T> {
     fn compile_shader(&mut self, defines: &T) -> Result<Shader> {
         Shader::with_src_defines(
             self.vs_src.clone(),
-            &defines.defines_vs(),
+            &[],
             self.fs_src.clone(),
-            &defines.defines_fs(),
+            &defines.defines(),
         )
     }
 }
 
 pub trait ShaderDefines: Eq + Hash + Clone {
-    fn defines_fs(&self) -> Vec<&str> {
-        vec![]
-    }
-
-    fn defines_vs(&self) -> Vec<&str> {
+    fn defines(&self) -> Vec<&str> {
         vec![]
     }
 }

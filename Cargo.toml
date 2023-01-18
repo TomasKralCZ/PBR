@@ -18,6 +18,11 @@ cstr = "0.2.11"
 glam = { version = "0.22", features = ["glam-assert", "bytemuck"] }
 bytemuck = { version = "1.9.1", features = ["derive"] }
 eyre = "0.6.7"
+globwalk = "0.8.1"
+
+[build-dependencies]
+tera = { version = "1.17", default-features = false }
+eyre = "0.6.7"
 
 [profile.dev]
 opt-level = 1

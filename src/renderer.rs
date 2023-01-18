@@ -5,7 +5,8 @@ use eyre::{eyre, Result};
 use glam::{Mat4, Vec3};
 
 use crate::{
-    app_settings::AppSettings,
+    app_settings::{AppSettings, MaterialSrc},
+    brdf_raw::{BrdfRaw, BrdfType},
     camera::Camera,
     ogl::{self, texture::GlTexture, uniform_buffer::UniformBuffer, vao::Vao},
     resources::Resources,
@@ -27,7 +28,7 @@ use self::{
     ibl::Ibl,
     lighting::Lighting,
     pbr_settings::PbrSettings,
-    shaders::{PbrDefines, Shaders},
+    shaders::{DataDrivenDefines, PbrDefines, Shaders},
     transforms::Transforms,
 };
 
@@ -79,7 +80,7 @@ impl Renderer {
 
         let selected_scene = self.app_settings.get().selected_scene;
         let mut res = resources.get_mut();
-        let scene = res.get_selected_scene(selected_scene)?;
+        let scene = res.get_scene(selected_scene)?;
 
         let transform = scene.transform;
         self.render_node(&scene.root, transform)?;
@@ -94,18 +95,11 @@ impl Renderer {
         camera: &mut dyn Camera,
         mut res: RefMut<Resources>,
     ) -> Result<()> {
+        self.update_brdf(&mut res)?;
+
         let app_settings = self.app_settings.get();
-
         let selected_scene = app_settings.selected_scene;
-        let selected_brdf = app_settings.selected_brdf;
-
-        if app_settings.data_driven_rendering {
-            let brdf = res.get_selected_brdf(selected_brdf)?;
-            brdf.ssbo.bind();
-            unsafe {
-                gl::BindTextureUnit(ogl::RAW_BRDF_PORT, brdf.ibl_texture.id);
-            }
-        }
+        if app_settings.material_src == MaterialSrc::MerlBrdf {}
 
         self.pbr_settings.inner = app_settings.pbr_settings;
         self.pbr_settings.update();
@@ -118,7 +112,7 @@ impl Renderer {
             1000.,
         );
 
-        let scene = res.get_selected_scene(selected_scene)?;
+        let scene = res.get_scene(selected_scene)?;
         self.transforms.inner.projection = persp;
         self.transforms.inner.view = camera.view_mat();
         self.transforms.inner.model = scene.transform;
@@ -126,6 +120,44 @@ impl Renderer {
 
         self.lighting.inner.cam_pos = camera.get_pos().extend(0.0);
         self.lighting.update();
+
+        Ok(())
+    }
+
+    fn update_brdf(&mut self, res: &mut RefMut<Resources>) -> Result<()> {
+        let material_src = self.app_settings.get().material_src;
+        match material_src {
+            MaterialSrc::MerlBrdf => {
+                let selected_brdf = self.app_settings.get().selected_merl_brdf;
+                let brdf = res.get_merl_brdf(selected_brdf)?;
+                self.check_load_brdf(brdf)?;
+            }
+            MaterialSrc::MitBrdf => {
+                let selected_brdf = self.app_settings.get().selected_mit_brdf;
+                let brdf = res.get_mit_brdf(selected_brdf)?;
+                self.check_load_brdf(brdf)?;
+            }
+            MaterialSrc::UtiaBrdf => {
+                let selected_brdf = self.app_settings.get().selected_utia_brdf;
+                let brdf = res.get_utia_brdf(selected_brdf)?;
+                self.check_load_brdf(brdf)?;
+            }
+            _ => (),
+        };
+
+        Ok(())
+    }
+
+    fn check_load_brdf<const BINDING: u32>(&mut self, brdf: &mut BrdfRaw<BINDING>) -> Result<()> {
+        if brdf.ibl_texture.is_none() {
+            let ibl_texture = Ibl::compute_ibl_brdf(&brdf.ssbo, &self.cubemap, brdf.typ)?;
+            brdf.ibl_texture = Some(ibl_texture);
+        }
+
+        brdf.ssbo.bind();
+        unsafe {
+            gl::BindTextureUnit(ogl::RAW_BRDF_PORT, brdf.ibl_texture.as_ref().unwrap().id);
+        }
 
         Ok(())
     }
@@ -198,12 +230,21 @@ impl Renderer {
             self.bind_textures(primitive);
             self.set_material(primitive);
 
-            let defines = Self::prim_pbr_defines(primitive);
-
-            let shader = if self.app_settings.get().data_driven_rendering {
-                self.shaders.data_based_shaders.get_shader(defines)?
-            } else {
-                self.shaders.pbr_shaders.get_shader(defines)?
+            let shader = match self.app_settings.get().material_src {
+                b @ (MaterialSrc::MerlBrdf | MaterialSrc::MitBrdf | MaterialSrc::UtiaBrdf) => {
+                    let brdf_typ = match b {
+                        MaterialSrc::MerlBrdf => BrdfType::Merl,
+                        MaterialSrc::MitBrdf => BrdfType::Mit,
+                        MaterialSrc::UtiaBrdf => BrdfType::Utia,
+                        _ => unreachable!(),
+                    };
+                    let defines = DataDrivenDefines::from_prim_brdf(primitive, brdf_typ);
+                    self.shaders.data_based_shaders.get_shader(defines)?
+                }
+                _ => {
+                    let defines = PbrDefines::from_prim(primitive);
+                    self.shaders.pbr_shaders.get_shader(defines)?
+                }
             };
 
             shader.use_shader(|| {
@@ -245,29 +286,11 @@ impl Renderer {
         }
     }
 
-    fn prim_pbr_defines(prim: &Primitive) -> PbrDefines {
-        let pbr = &prim.pbr_material;
-        let cc = prim.clearcoat.as_ref();
-
-        PbrDefines {
-            albedo_map: pbr.base_color_texture.is_some(),
-            mr_map: pbr.mr_texture.is_some(),
-            normal_map: pbr.normal_texture.is_some(),
-            occlusion_map: pbr.occlusion_texture.is_some(),
-            emissive_map: pbr.emissive_texture.is_some(),
-            clearcoat_enabled: cc.is_some(),
-            clearcoat_intensity_map: cc.and_then(|c| c.intensity_texture.as_ref()).is_some(),
-            clearcoat_roughness_map: cc.and_then(|c| c.roughness_texture.as_ref()).is_some(),
-            clearcoat_normal_map: cc.and_then(|c| c.normal_texture.as_ref()).is_some(),
-            anisotropy_enabled: prim.anisotropy.is_some(),
-        }
-    }
-
     fn set_material(&mut self, prim: &Primitive) {
         let app_settings = self.app_settings.get();
-        if app_settings.should_override_material {
+        if app_settings.material_src == MaterialSrc::PbrOverride {
             self.material.inner = app_settings.pbr_material_override;
-        } else {
+        } else if app_settings.material_src == MaterialSrc::Gltf {
             self.material.inner.base_color_factor = prim.pbr_material.base_color_factor;
             self.material.inner.emissive_factor[0..3]
                 .copy_from_slice(&prim.pbr_material.emissive_factor);

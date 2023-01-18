@@ -2,82 +2,20 @@
 
 //#defines
 
-//#import shaders/consts.glsl
-//#import shaders/tools/tonemap.glsl
-//#import shaders/brdf.glsl
+// {% include "consts.glsl" %}
 
-in VsOut
-{
-    vec2 texCoords;
-    vec3 fragPos;
-    vec3 normal;
-    vec3 tangent;
-    vec3 bitangent;
-}
-vsOut;
+// {% include "structs/pbrVsOut.glsl" %}
+// {% include "structs/pbrMaterial.glsl" %}
+// {% include "structs/pbrTextures.glsl" %}
+// {% include "structs/lighting.glsl" %}
+// {% include "structs/settings.glsl" %}
+
+// {% include "tools/tonemap.glsl" %}
+// {% include "tools/normal_map.glsl" %}
+
+// {% include "brdf.glsl" %}
 
 out vec4 FragColor;
-
-layout(std140, binding = 1) uniform PbrMaterial
-{
-    uniform vec4 baseColorFactor;
-    uniform vec4 emissiveFactor;
-    uniform float metallicFactor;
-    uniform float roughnessFactor;
-    uniform float normalScale;
-    uniform float occlusionStrength;
-
-    uniform float clearcoatIntensityFactor;
-    uniform float clearcoatRoughnessFactor;
-    uniform float clearcoatNormalScale;
-
-    uniform float anisotropy;
-};
-
-#ifdef ALBEDO_MAP
-layout(binding = 0) uniform sampler2D abledoTex;
-#endif
-#ifdef MR_MAP
-layout(binding = 1) uniform sampler2D mrTex;
-#endif
-#ifdef NORMAL_MAP
-layout(binding = 2) uniform sampler2D normalTex;
-#endif
-#ifdef OCCLUSION_MAP
-layout(binding = 3) uniform sampler2D occlusionTex;
-#endif
-#ifdef EMISSIVE_MAP
-layout(binding = 4) uniform sampler2D emissiveTex;
-#endif
-
-#ifdef CLEARCOAT_INTENSITY_MAP
-layout(binding = 5) uniform sampler2D clearcoatIntensityTex;
-#endif
-#ifdef CLEARCOAT_ROUGHNESS_MAP
-layout(binding = 6) uniform sampler2D clearcoatRoughnessTex;
-#endif
-#ifdef CLEARCOAT_NORMAL_MAP
-layout(binding = 7) uniform sampler2D clearcoatNormalTex;
-#endif
-
-layout(binding = 8) uniform samplerCube irradianceMap;
-layout(binding = 9) uniform samplerCube prefilterMap;
-layout(binding = 10) uniform sampler2D brdfLut;
-
-layout(std140, binding = 2) uniform Lighting
-{
-    uniform vec4 lightPositions[4];
-    uniform vec4 lightColors[4];
-    uniform vec4 camPos;
-    uniform uint lights;
-};
-
-layout(std140, binding = 3) uniform Settings
-{
-    uniform bool clearcoatEnabled;
-    uniform bool directLightEnabled;
-    uniform bool IBLEnabled;
-};
 
 // Parameters that stay same for the whole pixel
 struct ShadingParams {
@@ -98,19 +36,6 @@ struct ShadingParams {
     float clearcoatIntensity;
 #endif
 };
-
-#if defined(NORMAL_MAP) || defined(CLEARCOAT_NORMAL_MAP)
-vec3 getNormalFromMap(sampler2D tex, float scaleNormal, vec3 viewDir)
-{
-    // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#_material_normaltextureinfo_scale
-    vec3 tangentNormal
-        = normalize((texture(tex, vsOut.texCoords).xyz) * 2.0 - 1.0) * vec3(scaleNormal, scaleNormal, 1.0);
-
-    mat3 tbn = mat3(normalize(vsOut.tangent), normalize(vsOut.bitangent), normalize(vsOut.normal));
-
-    return normalize(tbn * tangentNormal);
-}
-#endif
 
 #ifdef CLEARCOAT
 vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway, vec3 lightDir, float VoH)

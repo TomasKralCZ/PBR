@@ -1,10 +1,12 @@
-use eyre::Result;
+use eyre::{eyre, Result};
 
-use crate::{brdf_raw::BrdfRaw, scene::Scene, util::timed_scope};
+use crate::{brdf_raw::BrdfRaw, ogl, scene::Scene, util::timed_scope};
 
 pub struct Resources {
     pub scenes: Vec<LazyResource<Scene>>,
-    pub brdfs: Vec<LazyResource<BrdfRaw>>,
+    pub merl_brdfs: Vec<LazyResource<BrdfRaw<{ ogl::BRDF_MERL_BINDING }>>>,
+    pub mit_brdfs: Vec<LazyResource<BrdfRaw<{ ogl::BRDF_MIT_BINDING }>>>,
+    pub utia_brdfs: Vec<LazyResource<BrdfRaw<{ ogl::BRDF_UTIA_BINDING }>>>,
 }
 
 impl Resources {
@@ -13,7 +15,7 @@ impl Resources {
         let mut scenes = Vec::new();
 
         let mut add_scene = |path: &'static str| {
-            let lazy_model = LazyResource::new(path);
+            let lazy_model = LazyResource::new(path.to_string());
             scenes.push(lazy_model);
         };
 
@@ -27,32 +29,69 @@ impl Resources {
         add_scene("resources/gltf/Sphere.glb");
         add_scene("resources/gltf/Cylinder.gltf");
 
-        let mut brdfs = Vec::new();
+        let mut merl_brdfs = Vec::new();
+        for brdf in globwalk::glob("resources/BRDFDatabase/brdfs/*.binary").unwrap() {
+            if let Ok(brdf) = brdf {
+                if let Some(p) = brdf.path().to_str().map(|s| s.to_string()) {
+                    let brdf = LazyResource::new(p);
+                    merl_brdfs.push(brdf);
+                }
+            }
+        }
 
-        let mut add_brdf = |path: &'static str| {
-            let brdf = LazyResource::new(path);
-            brdfs.push(brdf);
+        let mut mit_brdfs = Vec::new();
+
+        let mut add_mit_brdf = |path: &'static str| {
+            let brdf = LazyResource::new(path.to_string());
+            mit_brdfs.push(brdf);
         };
 
-        add_brdf("resources/BRDFDatabase/brdfs/black-fabric.binary");
-        add_brdf("resources/BRDFDatabase/brdfs/blue-acrylic.binary");
-        add_brdf("resources/BRDFDatabase/brdfs/brass.binary");
-        add_brdf("resources/BRDFDatabase/brdfs/fruitwood-241.binary");
-        add_brdf("resources/BRDFDatabase/brdfs/gold-metallic-paint.binary");
-        add_brdf("resources/BRDFDatabase/brdfs/green-latex.binary");
-        add_brdf("resources/BRDFDatabase/brdfs/nylon.binary");
-        add_brdf("resources/BRDFDatabase/brdfs/red-plastic.binary");
-        add_brdf("resources/BRDFDatabase/brdfs/chrome.binary");
+        add_mit_brdf("resources/MITBRDFs/brushed_alum.dat");
+        add_mit_brdf("resources/MITBRDFs/purple_satin.dat");
+        add_mit_brdf("resources/MITBRDFs/red_velvet.dat");
+        add_mit_brdf("resources/MITBRDFs/yellow_satin.dat");
 
-        Ok(Self { scenes, brdfs })
+        let mut utia_brdfs = Vec::new();
+        for brdf in globwalk::glob("resources/UTIA/data/*.bin").unwrap() {
+            if let Ok(brdf) = brdf {
+                if let Some(p) = brdf.path().to_str().map(|s| s.to_string()) {
+                    let brdf = LazyResource::new(p);
+                    utia_brdfs.push(brdf);
+                }
+            }
+        }
+
+        Ok(Self {
+            scenes,
+            merl_brdfs,
+            mit_brdfs,
+            utia_brdfs,
+        })
     }
 
-    pub fn get_selected_scene(&mut self, selected_scene: usize) -> Result<&mut Scene> {
+    pub fn get_scene(&mut self, selected_scene: usize) -> Result<&mut Scene> {
         self.scenes[selected_scene].get()
     }
 
-    pub fn get_selected_brdf(&mut self, selected_brdf: usize) -> Result<&mut BrdfRaw> {
-        self.brdfs[selected_brdf].get()
+    pub fn get_merl_brdf(
+        &mut self,
+        selected_brdf: usize,
+    ) -> Result<&mut BrdfRaw<{ ogl::BRDF_MERL_BINDING }>> {
+        self.merl_brdfs[selected_brdf].get()
+    }
+
+    pub fn get_mit_brdf(
+        &mut self,
+        selected_brdf: usize,
+    ) -> Result<&mut BrdfRaw<{ ogl::BRDF_MIT_BINDING }>> {
+        self.mit_brdfs[selected_brdf].get()
+    }
+
+    pub fn get_utia_brdf(
+        &mut self,
+        selected_brdf: usize,
+    ) -> Result<&mut BrdfRaw<{ ogl::BRDF_UTIA_BINDING }>> {
+        self.utia_brdfs[selected_brdf].get()
     }
 
     pub fn unload(&mut self) {
@@ -60,7 +99,7 @@ impl Resources {
             scene.unload();
         }
 
-        for scene in &mut self.brdfs {
+        for scene in &mut self.merl_brdfs {
             scene.unload();
         }
     }
@@ -68,12 +107,12 @@ impl Resources {
 
 /// Loading models takes a long time, load them lazily
 pub struct LazyResource<T: LoadResource> {
-    path: &'static str,
+    path: String,
     resource: Option<T>,
 }
 
 impl<T: LoadResource> LazyResource<T> {
-    fn new(path: &'static str) -> Self {
+    fn new(path: String) -> Self {
         Self {
             path,
             resource: None,
@@ -86,9 +125,8 @@ impl<T: LoadResource> LazyResource<T> {
         if self.resource.is_some() {
             Ok(self.resource.as_mut().unwrap())
         } else {
-            let path = self.path;
-
-            let resource = timed_scope(&format!("Loading '{path}'"), || T::load(path))?;
+            let path = &self.path;
+            let resource = timed_scope(&format!("Loading '{path}'"), || T::load(&path))?;
 
             self.resource = Some(resource);
 
@@ -124,8 +162,18 @@ impl LoadResource for Scene {
     }
 }
 
-impl LoadResource for BrdfRaw {
+impl<const BINDING: u32> LoadResource for BrdfRaw<BINDING> {
     fn load(path: &str) -> Result<Self> {
-        Self::from_path(path)
+        let ext = path
+            .rsplit_once(".")
+            .ok_or(eyre!("BRDF file has no extension name, cannot infer type"))?
+            .1;
+
+        match ext {
+            "bin" => Self::utia_from_path(path),
+            "binary" => Self::merl_from_path(path),
+            "dat" => Self::mit_from_path(path),
+            _ => Err(eyre!("BRDF file has no extension name, cannot infer type")),
+        }
     }
 }

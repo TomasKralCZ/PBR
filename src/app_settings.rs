@@ -12,14 +12,15 @@ pub struct AppSettings {
 
     pub viewport_dim: ViewportDim,
 
-    pub should_override_material: bool,
+    pub material_src: MaterialSrc,
     pub pbr_material_override: PbrMaterial,
-
     pub pbr_settings: PbrSettings,
-
-    pub data_driven_rendering: bool,
-    // Index into the resources brdf vector
-    pub selected_brdf: usize,
+    // Index into the resources merl_brdfs vector
+    pub selected_merl_brdf: usize,
+    // Index into the resources mit_brdfs vector
+    pub selected_mit_brdf: usize,
+    // Index into the resources utia_brdfs vector
+    pub selected_utia_brdf: usize,
 }
 
 impl AppSettings {
@@ -27,12 +28,34 @@ impl AppSettings {
         Self {
             selected_scene: 0,
             viewport_dim: ViewportDim::new(window),
+            material_src: MaterialSrc::Gltf,
             camera_typ: CameraTyp::Orbital,
-            should_override_material: false,
             pbr_material_override: PbrMaterial::new(),
             pbr_settings: PbrSettings::new(),
-            data_driven_rendering: false,
-            selected_brdf: 0,
+            selected_merl_brdf: 0,
+            selected_mit_brdf: 0,
+            selected_utia_brdf: 0,
+        }
+    }
+}
+
+#[derive(PartialEq, Clone, Copy)]
+pub enum MaterialSrc {
+    Gltf,
+    PbrOverride,
+    MerlBrdf,
+    MitBrdf,
+    UtiaBrdf,
+}
+
+impl MaterialSrc {
+    pub fn to_str(self) -> &'static str {
+        match self {
+            MaterialSrc::Gltf => "GLTF",
+            MaterialSrc::PbrOverride => "Override material",
+            MaterialSrc::MerlBrdf => "MERL BRDF database",
+            MaterialSrc::MitBrdf => "MIT CSAIL database",
+            MaterialSrc::UtiaBrdf => "UTIA BRDF database",
         }
     }
 }
