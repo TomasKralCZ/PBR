@@ -220,8 +220,10 @@ void modifyBaseF0(inout vec3 f0, float clearcoatIntensity)
 }
 #endif
 
-void initShadingParams(inout ShadingParams sp)
+ShadingParams initShadingParams()
 {
+    ShadingParams sp;
+
     sp.albedo = baseColorFactor;
 #ifdef ALBEDO_MAP
     sp.albedo *= texture(abledoTex, vsOut.texCoords);
@@ -285,12 +287,13 @@ void initShadingParams(inout ShadingParams sp)
     sp.clearcoatNoV = max(dot(sp.clearcoatNormal, sp.viewDir), 0.0);
 
 #endif
+
+    return sp;
 }
 
 void main()
 {
-    ShadingParams sp;
-    initShadingParams(sp);
+    ShadingParams sp = initShadingParams();
 
     vec3 color = vec3(0.);
 

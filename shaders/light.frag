@@ -1,12 +1,6 @@
 #version 460 core
 
-in VsOut
-{
-    vec2 texCoords;
-    vec3 normal;
-    vec3 fragPos;
-}
-vsOut;
+// {% include "structs/pbrVsOut.glsl" %}
 
 uniform vec3 lightColor;
 

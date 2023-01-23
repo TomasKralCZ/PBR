@@ -71,8 +71,10 @@ vec3 calculateIBL(ShadingParams sp)
     return texture(rawBrdfMap, reflectDir).rgb;
 }
 
-void initShadingParams(inout ShadingParams sp)
+ShadingParams initShadingParams()
 {
+    ShadingParams sp;
+
     sp.viewDir = normalize(camPos.xyz - vsOut.fragPos);
 
 #ifdef NORMAL_MAP
@@ -82,12 +84,13 @@ void initShadingParams(inout ShadingParams sp)
 #endif
 
     sp.NoV = dot(sp.normal, sp.viewDir);
+
+    return sp;
 }
 
 void main()
 {
-    ShadingParams sp;
-    initShadingParams(sp);
+    ShadingParams sp = initShadingParams();
 
     vec3 color = vec3(0.);
 
