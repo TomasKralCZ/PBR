@@ -10,7 +10,7 @@ gl = { git = "https://github.com/brendanzab/gl-rs" }
 gltf = { git = "https://github.com/TomasKralCZ/gltf/", branch = "clearcoat", version = "*", features = ["KHR_lights_punctual", "KHR_materials_clearcoat"] }
 image = { version = "0.24.2", features = ["png", "jpeg", "hdr"] }
 
-sdl2 = { version = "0.35", features = ["bundled"] }
+sdl2 = { version = "0.35", features = ["bundled", "static-link"] }
 egui = "0.16"
 egui_sdl2_gl = "0.16.0"
 
