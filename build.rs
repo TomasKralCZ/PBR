@@ -37,12 +37,13 @@ fn visit_dirs(dir: &Path, tera: &Tera, context: &Context) -> Result<()> {
                 let file_name = entry.file_name();
                 let file_name = file_name.to_str().unwrap();
                 let path = path.strip_prefix("shaders/")?.to_str().unwrap();
+                let path = path.replace("\\", "/");
 
                 if !file_name.ends_with("glsl") {
                     let mut result = Vec::from(NOTICE);
-                    tera.render_to(path, &context, &mut result)?;
+                    tera.render_to(&path, &context, &mut result)?;
 
-                    let output_path = format!("{}/{}", OUTUT_PATH, file_name);
+                    let output_path = PathBuf::from(OUTUT_PATH).join(file_name);
                     fs::write(output_path, result)?;
                 }
             }
