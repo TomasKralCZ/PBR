@@ -44,17 +44,12 @@ vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway, vec3 light
     float clearcoatNoL = max(dot(lightDir, sp.clearcoatNormal), 0.0);
 
     // clearcoat BRDF
-    float N = ggxDistribution(clearcoatNoH, sp.clearcoatRoughness);
-    float G = smithGeometryShadowing(sp.clearcoatNoV, clearcoatNoL, sp.clearcoatRoughness);
+    float D = distributionGgx(clearcoatNoH, sp.clearcoatRoughness);
+    float V = visibilitySmithHeightCorrelated(sp.NoV, clearcoatNoL, sp.clearcoatRoughness);
     // Coating IOR is 1.5 (f0 == 0.04) - equivalent to polyurethane
     fresnel = fresnelSchlick(DIELECTRIC_FRESNEL, VoH) * sp.clearcoatIntensity;
 
-    vec3 numerator = N * G * vec3(fresnel);
-    float denominator = 4.0 * sp.clearcoatNoV * clearcoatNoL;
-    // + 0.0001 to prevent divide by zero
-    vec3 specular = numerator / (denominator + 0.0001);
-
-    return specular;
+    return D * V * vec3(fresnel);
 }
 #endif
 
@@ -63,7 +58,7 @@ void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 f
     float VoH, vec3 halfway, vec3 lightDir)
 {
     float D
-        = anisotropicGgxDistribution(sp.roughness, NoH, halfway, vsOut.tangent, vsOut.bitangent, anisotropy);
+        = distributionAnisotropicGgx(sp.roughness, NoH, halfway, vsOut.tangent, vsOut.bitangent, anisotropy);
 
     float ToV = dot(vsOut.tangent, sp.viewDir);
     float BoV = dot(vsOut.bitangent, sp.viewDir);
@@ -81,14 +76,10 @@ void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 f
 void baseSpecularIsotropic(
     ShadingParams sp, inout vec3 specular, inout vec3 fresnel, float NoH, float NoL, float VoH)
 {
-    float D = ggxDistribution(NoH, sp.roughness);
-    float G = smithGeometryShadowing(sp.NoV, NoL, sp.roughness);
+    float D = distributionGgx(NoH, sp.roughness);
     fresnel = fresnelSchlick(sp.f0, VoH);
-
-    vec3 numerator = D * G * fresnel;
-    float denominator = 4.0 * sp.NoV * NoL;
-    // + 0.0001 to prevent divide by zero
-    specular = numerator / (denominator + 0.0001);
+    float V = visibilitySmithHeightCorrelated(sp.NoV, NoL, sp.roughness);
+    specular = V * D * fresnel;
 }
 
 vec3 calculateDirectLighting(ShadingParams sp)
@@ -122,11 +113,12 @@ vec3 calculateDirectLighting(ShadingParams sp)
         vec3 diffuse = kd * sp.albedo.rgb / PI;
 
 #ifdef CLEARCOAT
-        float clearcoatFresnel;
-        vec3 clearcoatColor = clearcoatBrdf(sp, clearcoatFresnel, halfway, lightDir, VoH);
 
         vec3 brdf;
         if (clearcoatEnabled) {
+            float clearcoatFresnel;
+            vec3 clearcoatColor = clearcoatBrdf(sp, clearcoatFresnel, halfway, lightDir, VoH);
+
             // Energy loss due to the clearcoat layer is given by 1 - clearcoatFresnel
             brdf = (diffuse + specular) * (1. - clearcoatFresnel) + clearcoatColor;
         } else {

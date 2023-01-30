@@ -24,7 +24,7 @@ vec2 integrateBrdf(float NoV, float roughness)
 
     roughness = roughness * roughness;
 
-    const uint SAMPLE_COUNT = 1024u;
+    const uint SAMPLE_COUNT = 4096u;
     for (uint i = 0u; i < SAMPLE_COUNT; ++i) {
         vec2 Xi = hammersley(i, SAMPLE_COUNT);
         vec3 H = importanceSampleGgx(Xi, N, roughness);
@@ -35,10 +35,10 @@ vec2 integrateBrdf(float NoV, float roughness)
         float VoH = max(dot(V, H), 0.0);
 
         if (NoL > 0.0) {
-            float G = smithGeometryShadowing(NoV, NoL, roughness);
+            float G = geometrySmithHeightCorrelatedGgx(NoV, NoL, roughness);
             float G_Vis = (G * VoH) / (NoH * NoV);
-            float Fc = pow(1.0 - VoH, 5.0);
 
+            float Fc = pow(1.0 - VoH, 5.0);
             A += (1.0 - Fc) * G_Vis;
             B += Fc * G_Vis;
         }

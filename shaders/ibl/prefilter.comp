@@ -41,7 +41,7 @@ void main()
             float HoV = max(dot(h, v), 0.0);
 
             // sample from the environment's mip level based on roughness/pdf
-            float D = ggxDistribution(NoH, roughness);
+            float D = distributionGgx(NoH, roughness);
 
             float pdf = D * NoH / ((4.0 * HoV) + 0.0001);
 

@@ -8,9 +8,8 @@ vec3 fresnelSchlickRoughness(float VoH, vec3 f0, float roughness)
     return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - VoH, 0.0, 1.0), 5.0);
 }
 
-// GGX / Trowbridge-Reitz
 // roughness is perceptual roughness (roughness squared)
-float ggxDistribution(float NoH, float roughness)
+float distributionGgx(float NoH, float roughness)
 {
     float asq = roughness * roughness;
     float denom = (NoH * NoH) * (asq - 1.) + 1.;
@@ -27,8 +26,7 @@ float geometryGgx(float NoV, float roughness)
     return (2 * NoV) / denom;
 }
 
-// Smith
-float smithGeometryShadowing(float NoV, float NoL, float roughness)
+float geometrySmithGgx(float NoV, float NoL, float roughness)
 {
     float ggx2 = geometryGgx(NoV, roughness);
     float ggx1 = geometryGgx(NoL, roughness);
@@ -36,9 +34,33 @@ float smithGeometryShadowing(float NoV, float NoL, float roughness)
     return ggx1 * ggx2;
 }
 
+float geometrySmithHeightCorrelatedGgx(float NoV, float NoL, float roughness)
+{
+    float asq = roughness * roughness;
+    float NoVsq = NoV * NoV;
+    float NoLsq = NoL * NoL;
+
+    float denoml = sqrt(1 + asq * ((1. / NoLsq) - 1.));
+    float denomv = sqrt(1 + asq * ((1. / NoVsq) - 1.));
+
+    return 2 / (denoml + denomv);
+}
+
+float visibilitySmithHeightCorrelated(float NoV, float NoL, float roughness)
+{
+    float asq = roughness * roughness;
+    float NoVsq = NoV * NoV;
+    float NoLsq = NoL * NoL;
+
+    float denoml = NoL * sqrt(asq + NoVsq * (1. - asq));
+    float denomv = NoV * sqrt(asq + NoLsq * (1. - asq));
+
+    return 0.5 / (denoml + denomv);
+}
+
 #ifdef ANISOTROPY
 // Burley, “Physically-Based Shading at Disney.”
-float anisotropicGgxDistribution(
+float distributionAnisotropicGgx(
     float roughness, float NoH, vec3 halfway, vec3 tangent, vec3 bitangent, float anisotropy)
 {
     // Remapping from: Kulla and Conty, “Revisiting Physically Based Shading at Imageworks.”
