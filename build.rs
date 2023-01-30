@@ -13,13 +13,19 @@ fn generate_shaders() -> Result<()> {
     println!("cargo:rerun-if-changed=shaders/");
 
     let tera = Tera::new("shaders/**")?;
-    let context = Context::new();
+    let mut context = Context::new();
+    populate_context(&mut context);
 
     fs::create_dir_all(OUTUT_PATH)?;
 
     visit_dirs(&PathBuf::from("shaders/"), &tera, &context)?;
 
     Ok(())
+}
+
+fn populate_context(context: &mut Context) {
+    use shader_constants as sc;
+    context.insert("ibl", &sc::IBL);
 }
 
 const NOTICE: &'static str =

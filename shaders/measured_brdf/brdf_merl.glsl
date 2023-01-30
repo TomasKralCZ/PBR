@@ -9,7 +9,7 @@
 
 // To request permission to incorporate this software into commercial products contact:
 // Vice President of Marketing and Business Development;
-// Mitsubishi Electric Research Laboratories (MERL), 201 Broadway, Cambridge, MA 02139 or 
+// Mitsubishi Electric Research Laboratories (MERL), 201 Broadway, Cambridge, MA 02139 or
 // <license@merl.com>.
 
 // IN NO EVENT SHALL MERL BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL,
@@ -166,6 +166,13 @@ vec3 lookup_brdf_merl(vec3 toLight, vec3 toViewer, vec3 normal, vec3 tangent, ve
         = ind + BRDF_SAMPLING_RES_THETA_H * BRDF_SAMPLING_RES_THETA_D * BRDF_SAMPLING_RES_PHI_D / 2;
     int blueIndex = ind + BRDF_SAMPLING_RES_THETA_H * BRDF_SAMPLING_RES_THETA_D * BRDF_SAMPLING_RES_PHI_D;
 
-    return vec3(merlBrdfTable[redIndex] * RED_SCALE, merlBrdfTable[greenIndex] * GREEN_SCALE,
-        merlBrdfTable[blueIndex] * BLUE_SCALE);
+    float r = float(merlBrdfTable[redIndex] * RED_SCALE);
+    float g = float(merlBrdfTable[greenIndex] * GREEN_SCALE);
+    float b = float(merlBrdfTable[blueIndex] * BLUE_SCALE);
+
+    if (r < 0. || g < 0. || b < 0.) {
+        return vec3(0.);
+    }
+
+    return vec3(r, g, b);
 }

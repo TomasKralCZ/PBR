@@ -98,23 +98,30 @@ vec3 filip_lookup_brdf(float theta_i, float phi_i, float theta_v, float phi_v)
 
 vec3 lookup_brdf_utia(vec3 toLight, vec3 toViewer, vec3 normal, vec3 tangent, vec3 bitangent)
 {
-    float costheta_in = dot(normal, toLight);
-    float costheta_out = dot(normal, toViewer);
+    float NoL = dot(normal, toLight);
+    float NoV = dot(normal, toViewer);
 
-    if (costheta_in < 0 || costheta_out < 0) {
+    if (NoL < 0 || NoV < 0) {
         return vec3(0, 0, 0);
     }
 
-    float theta_in = acos(clamp(costheta_in, 0, 1));
-    float theta_out = acos(clamp(costheta_out, 0, 1));
+    float theta_in = acos(NoL);
+    float theta_out = acos(NoV);
+
     // float phi_out = atan(clamp(-dot(toViewer, bitangent), -1, 1), clamp(-dot(toViewer, tangent), -1, 1));
     // float phi_in = atan(clamp(-dot(toLight, bitangent), -1, 1), clamp(-dot(toLight, tangent), -1, 1));
 
-    vec3 projected_to_light = normalize(toLight - (dot(normal, toLight) * normal));
-    vec3 projected_to_viewer = normalize(toViewer - (dot(normal, toViewer) * normal));
+    vec3 projected_to_light = normalize(toLight - (clamp(NoL, 0.1, 0.9) * normal));
+    vec3 projected_to_viewer = normalize(toViewer - (NoV * normal));
 
     float phi_in = acos(dot(normalize(tangent), projected_to_light));
     float phi_out = acos(dot(normalize(tangent), projected_to_viewer));
 
-    return filip_lookup_brdf(theta_in, phi_in, theta_out, phi_out);
+    vec3 rgb = filip_lookup_brdf(theta_in, phi_in, theta_out, phi_out);
+
+    if (rgb.r < 0 || rgb.g < 0 || rgb.b < 0) {
+        return vec3(0.);
+    }
+
+    return rgb;
 }

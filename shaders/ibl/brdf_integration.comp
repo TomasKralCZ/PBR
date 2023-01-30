@@ -1,10 +1,12 @@
 #version 460 core
+// clang-format off
 
-// {% include "consts.glsl" %}
-// {% include "ibl/brdf_sampling.glsl" %}
-// {% include "brdf.glsl" %}
+{% include "consts.glsl" %}
+{% include "ibl/brdf_sampling.glsl" %}
+{% include "brdf.glsl" %}
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = {{ ibl.local_size_xy }}, local_size_y = {{ ibl.local_size_xy }}, local_size_z = 1) in;
+// clang-format on
 
 layout(rg32f, binding = 0) uniform writeonly image2D brdfLut;
 

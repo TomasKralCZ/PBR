@@ -1,9 +1,11 @@
 #version 460 core
+// clang-format off
+{% include "consts.glsl" %}
+{% include "ibl/cubemap_to_xyz.glsl" %}
 
-// {% include "consts.glsl" %}
-// {% include "ibl/cubemap_to_xyz.glsl" %}
-
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = {{ ibl.local_size_xy }}, local_size_y = {{ ibl.local_size_xy }}
+    , local_size_z = {{ ibl.local_size_z }}) in;
+// clang-format on
 
 layout(binding = 0) uniform samplerCube cubemap;
 layout(rgba32f, binding = 1) uniform writeonly imageCube irradianceMap;
@@ -26,17 +28,12 @@ void main()
     for (float phi = 0.0; phi < 2.0 * PI; phi += sampleDelta) {
         for (float theta = 0.0; theta < 0.5 * PI; theta += sampleDelta) {
             // Spherical coordinates to cartesian
-            vec3 tangentSampleDir = vec3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
-            // Tangent space to world space (need world coords to fetch from cubemap)
-            vec3 sampleDir
-                = tangentSampleDir.x * right + tangentSampleDir.y * up + tangentSampleDir.z * normal;
+            vec3 baseSampleDir = vec3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
+            // Change of basis from canonical to the basis of the normal
+            vec3 sampleDir = baseSampleDir.x * right + baseSampleDir.y * up + baseSampleDir.z * normal;
 
-            // cos(theta) is the same as dot(normal, lightDir)
-            // For the sin(theta) term, see
-            // https://cglearn.eu/pub/advanced-computer-graphics/physically-based-shading - Energy
-            // Conservation in Lambert Basically sin(theta) scales the light proportionally to the size of the
-            // "ring" on the hemisphere. It makes sense when you think about it as an integral... (continuous,
-            // not discrete).
+            // cos(theta) is Lambert's law
+            // sin(theta) arises due to how integrating over the hemisphere works
             irradiance += texture(cubemap, sampleDir).rgb * cos(theta) * sin(theta);
             sampleCount++;
         }

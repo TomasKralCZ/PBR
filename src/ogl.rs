@@ -1,6 +1,7 @@
 use std::{
     ffi::{c_void, CStr},
     ptr,
+    time::Duration,
 };
 
 /// Abstraction for ordinary buffers
@@ -52,6 +53,32 @@ pub type ProgramId = u32;
 pub type ShaderId = u32;
 pub type BufferId = u32;
 pub type VaoId = u32;
+
+pub fn gl_time_query<R, F: FnOnce() -> R>(label: &str, fun: F) -> R {
+    let mut query_id = 0;
+    unsafe {
+        gl::CreateQueries(gl::TIME_ELAPSED, 1, &mut query_id);
+        gl::BeginQuery(gl::TIME_ELAPSED, query_id);
+    }
+
+    let res = fun();
+
+    let mut time = 0;
+    unsafe {
+        gl::EndQuery(gl::TIME_ELAPSED);
+
+        let mut done = 0;
+        while done == 0 {
+            gl::GetQueryObjectiv(query_id, gl::QUERY_RESULT_AVAILABLE, &mut done);
+        }
+
+        gl::GetQueryObjectui64v(query_id, gl::QUERY_RESULT, &mut time);
+    }
+
+    println!("'{}' took: {:?}", label, Duration::from_nanos(time));
+
+    res
+}
 
 pub fn init_debug() {
     unsafe {

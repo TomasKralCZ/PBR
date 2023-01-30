@@ -1,4 +1,3 @@
-use eyre::Result;
 use std::{
     cell::{Ref, RefCell, RefMut},
     rc::Rc,
@@ -33,13 +32,13 @@ impl<T> Clone for RcMut<T> {
     }
 }
 
-pub fn timed_scope<R, F: FnOnce() -> Result<R>>(label: &str, fun: F) -> Result<R> {
+pub fn timed_scope<R, F: FnOnce() -> R>(label: &str, fun: F) -> R {
     let start = Instant::now();
 
-    let res = fun()?;
+    let res = fun();
 
     let time = Instant::now().duration_since(start);
     println!("{label} took: {time:?}");
 
-    Ok(res)
+    res
 }

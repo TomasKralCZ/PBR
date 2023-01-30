@@ -16,15 +16,20 @@ pub struct Lighting {
 impl Lighting {
     pub fn new() -> Self {
         let cam_pos = Vec4::ZERO;
-        let lights = 2;
+        let lights = 1;
         let light_pos = [
-            Vec4::new(10., 10., 10.0, 1.0),
             Vec4::new(-1., 1., 1., 1.0),
+            Vec4::new(10., 10., 10.0, 1.0),
             Vec4::ZERO,
             Vec4::ZERO,
         ];
 
-        let light_color = [Vec4::ZERO, Vec4::new(1., 1., 1., 0.), Vec4::ONE, Vec4::ONE];
+        let light_color = [
+            Vec4::new(1., 1., 1., 0.),
+            Vec4::new(1., 1., 1., 0.),
+            Vec4::ONE,
+            Vec4::ONE,
+        ];
 
         Self {
             cam_pos,

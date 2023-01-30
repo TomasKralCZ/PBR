@@ -11,13 +11,14 @@ use crate::ogl::shader::shader_permutations::ShaderDefines;
 use crate::ogl::shader::Shader;
 use crate::ogl::ssbo::Ssbo;
 use crate::ogl::texture::GlTexture;
-use crate::ogl::TextureId;
+use crate::ogl::{gl_time_query, TextureId};
 
-const CUBEMAP_SIZE: i32 = 1024; // SYNC this with prefilter.comp resolution !
+use shader_constants::IBL;
+
 const CUBEMAP_FACES: u32 = 6;
 const IRRADIANCE_MAP_SIZE: i32 = 64;
 const PREFILTER_MAP_SIZE: i32 = 256;
-const PREFILTER_MAP_ROUGHNES_LEVELS: i32 = 7; // SYNC this with pbr.MAX_REFLECTION_LOD ! (minus 1)
+const MEASURED_BRDF_MAP_SIZE: u32 = 128;
 const BRDF_LUT_SIZE: i32 = 512;
 
 pub struct Ibl {
@@ -49,18 +50,20 @@ impl Ibl {
             &brdf_type.defines(),
         )?;
 
-        shader.use_shader(|| unsafe {
-            gl::BindTextureUnit(0, cubemap.id);
-            brdf_ssbo.bind();
-            gl::BindImageTexture(1, tex.id, 0, gl::TRUE, 0, gl::WRITE_ONLY, gl::RGBA32F);
+        gl_time_query("measured BRDF compute shader", || {
+            shader.use_shader(|| unsafe {
+                gl::BindTextureUnit(0, cubemap.id);
+                brdf_ssbo.bind();
+                gl::BindImageTexture(1, tex.id, 0, gl::TRUE, 0, gl::WRITE_ONLY, gl::RGBA32F);
 
-            gl::DispatchCompute(
-                IRRADIANCE_MAP_SIZE as _,
-                IRRADIANCE_MAP_SIZE as _,
-                CUBEMAP_FACES,
-            );
+                Self::dispatch_compute_divide(
+                    MEASURED_BRDF_MAP_SIZE,
+                    MEASURED_BRDF_MAP_SIZE,
+                    CUBEMAP_FACES,
+                );
 
-            gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+            });
         });
 
         Ok(tex)
@@ -85,25 +88,27 @@ impl Ibl {
         let irradiance_tex = create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F);
         let irradiance_shader = Shader::comp_with_path("shaders_stitched/irradiance.comp")?;
 
-        irradiance_shader.use_shader(|| unsafe {
-            gl::BindTextureUnit(0, cubemap_tex_id);
-            gl::BindImageTexture(
-                1,
-                irradiance_tex.id,
-                0,
-                gl::TRUE,
-                0,
-                gl::WRITE_ONLY,
-                gl::RGBA32F,
-            );
+        gl_time_query("irradiance compute shader", || {
+            irradiance_shader.use_shader(|| unsafe {
+                gl::BindTextureUnit(0, cubemap_tex_id);
+                gl::BindImageTexture(
+                    1,
+                    irradiance_tex.id,
+                    0,
+                    gl::TRUE,
+                    0,
+                    gl::WRITE_ONLY,
+                    gl::RGBA32F,
+                );
 
-            gl::DispatchCompute(
-                IRRADIANCE_MAP_SIZE as _,
-                IRRADIANCE_MAP_SIZE as _,
-                CUBEMAP_FACES,
-            );
+                Self::dispatch_compute_divide(
+                    IRRADIANCE_MAP_SIZE as u32,
+                    IRRADIANCE_MAP_SIZE as u32,
+                    CUBEMAP_FACES,
+                );
 
-            gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+            });
         });
 
         Ok(irradiance_tex)
@@ -125,11 +130,17 @@ impl Ibl {
         let brdf_integration_shader =
             Shader::comp_with_path("shaders_stitched/brdf_integration.comp")?;
 
-        brdf_integration_shader.use_shader(|| unsafe {
-            gl::BindImageTexture(0, brdf_lut.id, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::RG32F);
+        gl_time_query("split_sum brdf integration", || {
+            brdf_integration_shader.use_shader(|| unsafe {
+                gl::BindImageTexture(0, brdf_lut.id, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::RG32F);
 
-            gl::DispatchCompute(BRDF_LUT_SIZE as _, BRDF_LUT_SIZE as _, 1);
-            gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                gl::DispatchCompute(
+                    BRDF_LUT_SIZE as u32 / IBL.local_size_xy,
+                    BRDF_LUT_SIZE as u32 / IBL.local_size_xy,
+                    1,
+                );
+                gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+            });
         });
 
         Ok(brdf_lut)
@@ -141,7 +152,7 @@ impl Ibl {
 
         unsafe {
             let size = PREFILTER_MAP_SIZE;
-            let levels = PREFILTER_MAP_ROUGHNES_LEVELS;
+            let levels = IBL.prefilter_map_roughnes_levels;
             gl::TextureStorage2D(prefilter_tex.id, levels, gl::RGBA32F, size, size);
 
             let clamp = gl::CLAMP_TO_EDGE as i32;
@@ -155,33 +166,43 @@ impl Ibl {
         }
 
         let prefilter_shader = Shader::comp_with_path("shaders_stitched/prefilter.comp")?;
-        prefilter_shader.use_shader(|| unsafe {
-            gl::BindTextureUnit(0, cubemap_tex_id);
+        gl_time_query("split_sum prefiltering", || {
+            prefilter_shader.use_shader(|| unsafe {
+                gl::BindTextureUnit(0, cubemap_tex_id);
 
-            for lod in 0..PREFILTER_MAP_ROUGHNES_LEVELS {
-                let roughness = lod as f32 / (PREFILTER_MAP_ROUGHNES_LEVELS as f32 - 1.);
-                prefilter_shader.set_f32(roughness, cstr!("perceptualRoughness"));
+                for lod in 0..IBL.prefilter_map_roughnes_levels {
+                    let roughness = lod as f32 / (IBL.prefilter_map_roughnes_levels as f32 - 1.);
+                    prefilter_shader.set_f32(roughness, cstr!("perceptualRoughness"));
 
-                gl::BindImageTexture(
-                    1,
-                    prefilter_tex.id,
-                    lod,
-                    gl::TRUE,
-                    0,
-                    gl::WRITE_ONLY,
-                    gl::RGBA32F,
-                );
+                    gl::BindImageTexture(
+                        1,
+                        prefilter_tex.id,
+                        lod,
+                        gl::TRUE,
+                        0,
+                        gl::WRITE_ONLY,
+                        gl::RGBA32F,
+                    );
 
-                // TODO: make sure this matches the atual mip sizes...
-                let mip_width = (PREFILTER_MAP_SIZE as f32 * 0.5f32.powi(lod)) as i32;
-                let mip_height = (PREFILTER_MAP_SIZE as f32 * 0.5f32.powi(lod)) as i32;
+                    // TODO: make sure this matches the atual mip sizes...
+                    let mip_width = (PREFILTER_MAP_SIZE as f32 * 0.5f32.powi(lod)) as i32;
+                    let mip_height = (PREFILTER_MAP_SIZE as f32 * 0.5f32.powi(lod)) as i32;
 
-                gl::DispatchCompute(mip_width as _, mip_height as _, CUBEMAP_FACES);
-                gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
-            }
+                    gl::DispatchCompute(mip_width as _, mip_height as _, CUBEMAP_FACES);
+                    gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                }
+            });
         });
 
         Ok(prefilter_tex)
+    }
+
+    unsafe fn dispatch_compute_divide(x: u32, y: u32, z: u32) {
+        gl::DispatchCompute(
+            x / IBL.local_size_xy,
+            y / IBL.local_size_xy,
+            z / IBL.local_size_z,
+        );
     }
 }
 
@@ -189,7 +210,7 @@ impl Ibl {
 pub fn load_cubemap_from_equi(path: &str) -> Result<GlTexture> {
     let equimap = load_hdr_image(path)?;
     let equi_tex = create_equi_texture(equimap);
-    let cubemap_tex = create_cubemap_texture(CUBEMAP_SIZE, gl::RGBA32F);
+    let cubemap_tex = create_cubemap_texture(IBL.cubemap_size, gl::RGBA32F);
     let equi_to_cubemap_shader = Shader::comp_with_path("shaders_stitched/equi_to_cubemap.comp")?;
 
     equi_to_cubemap_shader.use_shader(|| unsafe {
@@ -204,7 +225,7 @@ pub fn load_cubemap_from_equi(path: &str) -> Result<GlTexture> {
             gl::RGBA32F,
         );
 
-        gl::DispatchCompute(CUBEMAP_SIZE as _, CUBEMAP_SIZE as _, CUBEMAP_FACES);
+        gl::DispatchCompute(IBL.cubemap_size as _, IBL.cubemap_size as _, CUBEMAP_FACES);
         gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
         gl::GenerateTextureMipmap(cubemap_tex.id);

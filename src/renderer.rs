@@ -54,6 +54,7 @@ pub struct Renderer {
 impl Renderer {
     /// Create a new renderer
     pub fn new(app_settings: RcMut<AppSettings>) -> Result<Self> {
+        // TODO: make this reloadable at runtime
         let cubemap = ibl::load_cubemap_from_equi("resources/IBL/rustig_koppie_puresky_4k.hdr")?;
         let ibl = Ibl::from_cubemap(&cubemap)?;
 

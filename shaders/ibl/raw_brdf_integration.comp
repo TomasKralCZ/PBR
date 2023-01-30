@@ -1,24 +1,27 @@
 #version 460 core
-
+// clang-format off
 //#defines
 
-// {% include "consts.glsl" %}
-// {% include "ibl/cubemap_to_xyz.glsl" %}
-// {% include "structs/brdf_bufs.glsl" %}
+{% include "consts.glsl" %}
+{% include "ibl/cubemap_to_xyz.glsl" %}
+{% include "ibl/brdf_sampling.glsl" %}
+{% include "structs/brdf_bufs.glsl" %}
 
 #ifdef MERL_BRDF
-// {% include "measured_brdf/brdf_merl.glsl" %}
+{% include "measured_brdf/brdf_merl.glsl" %}
 #endif
 
 #ifdef MIT_BRDF
-// {% include "measured_brdf/brdf_mit.glsl" %}
+{% include "measured_brdf/brdf_mit.glsl" %}
 #endif
 
 #ifdef UTIA_BRDF
-// {% include "measured_brdf/brdf_utia.glsl" %}
+{% include "measured_brdf/brdf_utia.glsl" %}
 #endif
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = {{ ibl.local_size_xy }}, local_size_y = {{ ibl.local_size_xy }}
+    ,local_size_z = {{ ibl.local_size_z }}) in;
+// clang-format on
 
 layout(binding = 0) uniform samplerCube cubemap;
 layout(rgba32f, binding = 1) uniform writeonly imageCube rawBrdfMap;
@@ -35,48 +38,48 @@ void main()
 
     vec3 irradiance = vec3(0.0);
 
-    float sampleDelta = 0.025;
-    float sampleCount = 0.0;
+    const uint SAMPLE_COUNT = 4096;
+    for (uint i = 0; i < SAMPLE_COUNT; i++) {
+        // http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
+        vec2 hammersleyPoint = hammersley(i, SAMPLE_COUNT);
+        float theta = acos(sqrt(1. - hammersleyPoint.x));
+        float phi = 2 * PI * hammersleyPoint.y;
 
-    for (float phi = 0.0; phi < 2.0 * PI; phi += sampleDelta) {
-        for (float theta = 0.0; theta < 0.5 * PI; theta += sampleDelta) {
-            // Spherical coordinates to cartesian
-            vec3 baseSampleDir = vec3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
-            // Tangent space to world space (need world coords to fetch from cubemap)
-            vec3 sampleDir = baseSampleDir.x * right + baseSampleDir.y * up + baseSampleDir.z * normal;
+        // Spherical coordinates to cartesian
+        vec3 baseSampleDir = vec3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
+        // Change of basis from canonical to the basis of the normal
+        vec3 sampleDir = baseSampleDir.x * right + baseSampleDir.y * up + baseSampleDir.z * normal;
 
-            // cos(theta) is the same as dot(normal, lightDir)
-            // For the sin(theta) term, see
-            // https://cglearn.eu/pub/advanced-computer-graphics/physically-based-shading - Energy
-            // Conservation in Lambert. Basically sin(theta) scales the light proportionally to the size of
-            // the "ring" on the hemisphere. It makes sense when you think about it as an integral...
-            // (continuous, not discrete).
-            vec3 radiance = texture(cubemap, sampleDir).rgb * cos(theta) * sin(theta);
+        // cos(theta) is Lambert's law
+        // sin(theta) arises due to how integrating over the hemisphere works
+        vec3 radiance = texture(cubemap, sampleDir).rgb * cos(theta) * sin(theta);
 
-            // "light direction" = sampleDir,
-            // Restriction - viewDir = normal, same as other techniques...
-            // tangent = right
-            // bitangenmt = up
+        // "light direction" = sampleDir,
+        // Restriction - viewDir = normal, same as other techniques...
+        // tangent = right
+        // bitangent = up
+        sampleDir = normalize(sampleDir);
 
 #ifdef MERL_BRDF
-            vec3 brdf = lookup_brdf_merl(sampleDir, normal, normal, right, up);
+        vec3 brdf = lookup_brdf_merl(sampleDir, normalize(normal - vec3(0.1)), normal, right, up);
+        float normalizer = 16.;
 #endif
 
 #ifdef MIT_BRDF
-            vec3 brdf = lookup_brdf_mit(sampleDir, normal, normal, right, up);
+        vec3 brdf = lookup_brdf_mit(sampleDir, normal, normal, right, up);
 #endif
 
+// FIXME(high): analytic light source works, IBL does not
 #ifdef UTIA_BRDF
-            vec3 brdf = lookup_brdf_utia(sampleDir, normal, normal, right, up);
+        vec3 brdf = lookup_brdf_utia(sampleDir, normalize(normal - vec3(0.1)), normal, right, up);
+        float normalizer = 1.;
 #endif
 
-            irradiance += brdf * radiance;
-            sampleCount++;
-        }
+        irradiance += brdf * radiance * normalizer;
     }
 
-    // FIXME: light is weak, why need to multiply ?
     // FIXME(high): check if any BRDF values are negative, that could screw up the integration
-    vec4 color = vec4(PI * irradiance / float(sampleCount), 1.0);
+    // FIXME(high): I'm pretty sure some of the UTIA values are negative
+    vec4 color = vec4(irradiance / float(SAMPLE_COUNT), 1.0);
     imageStore(rawBrdfMap, ivec3(globalId), color);
 }

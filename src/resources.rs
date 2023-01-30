@@ -14,6 +14,15 @@ impl Resources {
     pub fn init() -> Result<Self> {
         let mut scenes = Vec::new();
 
+        //for gltf in globwalk::glob("resources/gltf/*.{glb, gltf}").unwrap() {
+        //    if let Ok(gltf) = gltf {
+        //        if let Some(p) = gltf.path().to_str().map(|s| s.to_string()) {
+        //            let gltf = LazyResource::new(p);
+        //            scenes.push(gltf);
+        //        }
+        //    }
+        //}
+
         let mut add_scene = |path: &'static str| {
             let lazy_model = LazyResource::new(path.to_string());
             scenes.push(lazy_model);
@@ -26,6 +35,7 @@ impl Resources {
         add_scene("resources/gltf/shoe_with_clearcoat/shoe.gltf");
         add_scene("resources/gltf/ClearCoatTest.glb");
 
+        add_scene("resources/gltf/shader_ball/shaderBall.glb");
         add_scene("resources/gltf/Sphere.glb");
         add_scene("resources/gltf/Cylinder.gltf");
 
