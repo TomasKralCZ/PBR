@@ -40,7 +40,6 @@ void main()
             float NoH = max(dot(n, h), 0.0);
             float HoV = max(dot(h, v), 0.0);
 
-            // sample from the environment's mip level based on roughness/pdf
             float D = distributionGgx(NoH, roughness);
 
             float pdf = D * NoH / ((4.0 * HoV) + 0.0001);
@@ -52,6 +51,7 @@ void main()
 
             float saTexel = 4.0 * PI / (roughness_levels * resolution * resolution);
             float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 0.0001);
+            // sample from the environment's mip level based on roughness/pdf
             float mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
 
             prefilteredColor += textureLod(cubemap, l, mipLevel).rgb * NoL;

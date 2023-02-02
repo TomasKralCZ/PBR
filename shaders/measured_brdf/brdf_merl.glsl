@@ -139,6 +139,13 @@ infringement.
 
 vec3 lookup_brdf_merl(vec3 toLight, vec3 toViewer, vec3 normal, vec3 tangent, vec3 bitangent)
 {
+    float NoL = dot(normal, toLight);
+    float NoV = dot(normal, toViewer);
+
+    if (NoL < 0 || NoV < 0) {
+        return vec3(0.);
+    }
+
     vec3 H = normalize(toLight + toViewer);
     float theta_H = acos(clamp(dot(normal, H), 0, 1));
     float theta_diff = acos(clamp(dot(H, toLight), 0, 1));

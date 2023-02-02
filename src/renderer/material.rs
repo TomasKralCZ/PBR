@@ -1,7 +1,7 @@
 use crate::ogl::{self, uniform_buffer::UniformBufferElement};
 
 /// Uniform buffer element that stores the material settings
-#[derive(Default, bytemuck::Pod, bytemuck::Zeroable, Copy, Clone, PartialEq, Debug)]
+#[derive(Default, bytemuck::NoUninit, Copy, Clone, PartialEq, Debug)]
 #[repr(C)]
 pub struct PbrMaterial {
     pub base_color_factor: [f32; 4],

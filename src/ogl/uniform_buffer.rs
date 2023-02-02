@@ -1,6 +1,6 @@
 use std::{mem::size_of, ptr};
 
-use bytemuck::{Pod, Zeroable};
+use bytemuck::NoUninit;
 
 /// Abstraction for working with UniformBuffers.
 /// UniformBuffer is generic over T, and T must implement the UniformBufferElement trait.
@@ -45,9 +45,7 @@ where
     }
 }
 
-pub trait UniformBufferElement:
-    Sized + Zeroable + Pod + Clone + PartialEq + std::fmt::Debug
-{
+pub trait UniformBufferElement: Sized + NoUninit + Clone + PartialEq {
     /// The binding port
     const BINDING: u32;
     /// Update buffer data using gl::BufferSubData

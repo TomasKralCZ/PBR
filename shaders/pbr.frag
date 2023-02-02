@@ -1,20 +1,25 @@
 #version 460 core
-
 //#defines
 
-// {% include "consts.glsl" %}
+// clang-format off
+{% include "consts.glsl" %}
 
-// {% include "structs/pbrVsOut.glsl" %}
-// {% include "structs/pbrMaterial.glsl" %}
-// {% include "structs/pbrTextures.glsl" %}
-// {% include "structs/lighting.glsl" %}
-// {% include "structs/settings.glsl" %}
+{% include "structs/pbrVsOut.glsl" %}
+{% include "structs/pbrMaterial.glsl" %}
+{% include "structs/pbrTextures.glsl" %}
+{% include "structs/lighting.glsl" %}
+{% include "structs/settings.glsl" %}
 
-// {% include "tools/tonemap.glsl" %}
-// {% include "tools/normal_map.glsl" %}
+{% include "ibl/brdf_sampling.glsl" %}
 
-// {% include "brdf.glsl" %}
+{% include "tools/tonemap.glsl" %}
+{% include "tools/normal_map.glsl" %}
 
+{% include "brdf.glsl" %}
+
+// clang-format on
+
+#line 22
 out vec4 FragColor;
 
 // Parameters that stay same for the whole pixel
@@ -22,7 +27,7 @@ struct ShadingParams {
     vec4 albedo;
 
     vec3 viewDir;
-    vec3 normal;
+    NormalBasis tb;
     float NoV;
 
     float roughness;
@@ -30,6 +35,7 @@ struct ShadingParams {
     vec3 f0;
 
 #ifdef CLEARCOAT
+    NormalBasis clearcoatTb;
     vec3 clearcoatNormal;
     float clearcoatNoV;
     float clearcoatRoughness;
@@ -58,12 +64,12 @@ void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 f
     float VoH, vec3 halfway, vec3 lightDir)
 {
     float D
-        = distributionAnisotropicGgx(sp.roughness, NoH, halfway, vsOut.tangent, vsOut.bitangent, anisotropy);
+        = distributionAnisotropicGgx(sp.roughness, NoH, halfway, sp.tb.tangent, sp.tb.bitangent, anisotropy);
 
-    float ToV = dot(vsOut.tangent, sp.viewDir);
-    float BoV = dot(vsOut.bitangent, sp.viewDir);
-    float ToL = dot(vsOut.tangent, lightDir);
-    float BoL = dot(vsOut.bitangent, lightDir);
+    float ToV = dot(sp.tb.tangent, sp.viewDir);
+    float BoV = dot(sp.tb.bitangent, sp.viewDir);
+    float ToL = dot(sp.tb.tangent, lightDir);
+    float BoL = dot(sp.tb.bitangent, lightDir);
 
     // Visibility term (G divided with denominator)
     float V = anisotropicVSmithGgxCorrelated(sp.roughness, sp.NoV, ToV, BoV, ToL, BoL, NoL, anisotropy);
@@ -90,11 +96,12 @@ vec3 calculateDirectLighting(ShadingParams sp)
         vec3 lightDir = normalize(lightPositions[i].xyz - vsOut.fragPos);
         vec3 halfway = normalize(sp.viewDir + lightDir);
         float VoH = max(dot(halfway, sp.viewDir), 0.0);
-        float NoH = max(dot(sp.normal, halfway), 0.0);
-        float NoL = max(dot(sp.normal, lightDir), 0.0);
+        float NoH = max(dot(sp.tb.normal, halfway), 0.0);
+        float LoH = max(dot(lightDir, halfway), 0.0);
+        float NoL = max(dot(sp.tb.normal, lightDir), 0.0);
 
         // TODO: should add attenuation...
-        vec3 radiance = lightColors[i].xyz;
+        vec3 light = lightColors[i].xyz;
 
         vec3 fresnel;
         vec3 specular;
@@ -104,13 +111,26 @@ vec3 calculateDirectLighting(ShadingParams sp)
         baseSpecularIsotropic(sp, specular, fresnel, NoH, NoL, VoH);
 #endif
 
-        // diffuse is 1 - fresnel (the amount of reflected light)
+        // Simple way of setting the strength of the diffuse lobe is (1 - fresnel)
         vec3 kd = vec3(1.0) - fresnel;
-        // metals have no diffuse, attenuate for in-between materials
+        // Metals have no diffuse
         kd *= 1.0 - sp.metalness;
 
-        // Lambertian diffuse
-        vec3 diffuse = kd * sp.albedo.rgb / PI;
+        vec3 diffuse = kd;
+
+        switch (diffuseType) {
+        case DIFFUSE_TYPE_LAMBERT:
+            diffuse *= diffuseLambert(sp.albedo.xyz);
+            break;
+        case DIFFUSE_TYPE_FROSTBITE:
+            diffuse *= diffuseFrostbite(sp.albedo.xyz, sp.roughness, NoL, LoH, sp.NoV);
+            break;
+        case DIFFUSE_TYPE_CODWWII:
+            diffuse *= diffuseCodWWII(sp.albedo.xyz, sp.roughness, NoL, LoH, NoH, sp.NoV);
+            break;
+        }
+
+        diffuse /= PI;
 
 #ifdef CLEARCOAT
 
@@ -128,7 +148,7 @@ vec3 calculateDirectLighting(ShadingParams sp)
         vec3 brdf = diffuse + specular;
 #endif
 
-        totalRadiance += brdf * radiance * NoL;
+        totalRadiance += brdf * light * NoL;
     }
 
     return totalRadiance;
@@ -140,23 +160,24 @@ vec3 calculateIBL(ShadingParams sp)
     vec3 kD = 1.0 - F;
     kD *= 1.0 - sp.metalness;
 
-    vec3 irradiance = texture(irradianceMap, sp.normal).rgb;
+    vec3 irradiance = texture(irradianceMap, sp.tb.normal).rgb;
     vec3 iblDiffuse = irradiance * sp.albedo.rgb;
 
 #ifdef ANISOTROPY
     // Taken from: Guy and Agopian, “Physically Based Rendering in Filament.”
     // Based on
     // McAuley: Rendering the World of Far Cry 4.
-    vec3 anisotropicDirection = anisotropy >= 0.0 ? vsOut.bitangent : vsOut.tangent;
+    vec3 anisotropicDirection = anisotropy >= 0.0 ? sp.tb.bitangent : sp.tb.tangent;
     vec3 anisotropicTangent = cross(anisotropicDirection, sp.viewDir);
     vec3 anisotropicNormal = cross(anisotropicTangent, anisotropicDirection);
-    vec3 bentNormal = normalize(mix(sp.normal, anisotropicNormal, anisotropy));
+    vec3 bentNormal = normalize(mix(sp.tb.normal, anisotropicNormal, anisotropy));
     vec3 reflectDir = reflect(-sp.viewDir, bentNormal);
 #else
-    vec3 reflectDir = reflect(-sp.viewDir, sp.normal);
+    vec3 reflectDir = reflect(-sp.viewDir, sp.tb.normal);
 #endif
-
-    const float MAX_REFLECTION_LOD = 6.0;
+    // clang-format off
+    const float MAX_REFLECTION_LOD = float({{ ibl.prefilter_map_roughnes_levels - 1 }});
+    // clang-format on
     vec3 prefilteredLight = textureLod(prefilterMap, reflectDir, sp.roughness * MAX_REFLECTION_LOD).rgb;
     vec2 dfg = texture(brdfLut, vec2(sp.NoV, sp.roughness)).rg;
     vec3 iblSpecular = prefilteredLight * (F * dfg.x + dfg.y);
@@ -212,6 +233,64 @@ void modifyBaseF0(inout vec3 f0, float clearcoatIntensity)
 }
 #endif
 
+vec3 performRealtimeIBL(ShadingParams sp)
+{
+    // Diffuse
+    vec3 F = fresnelSchlickRoughness(sp.NoV, sp.f0, sp.roughness);
+    vec3 kD = 1.0 - F;
+    kD *= 1.0 - sp.metalness;
+
+    vec3 irradiance = texture(irradianceMap, sp.tb.normal).rgb;
+    vec3 iblDiffuse = irradiance * sp.albedo.rgb;
+
+    // Specular
+    const uint SAMPLE_COUNT = 128u;
+    vec3 color = vec3(0.);
+    // float totalWeight = 0.;
+    vec3 totalSpecular = vec3(0.);
+
+    for (uint i = 0u; i < SAMPLE_COUNT; i++) {
+        // generates a sample vector that's biased towards the preferred alignment
+        // direction (importance sampling).
+        vec2 hammersleyPoint = hammersley(i, SAMPLE_COUNT);
+        vec3 h = importanceSampleGgx(hammersleyPoint, sp.tb.normal, sp.roughness);
+        vec3 l = normalize(2.0 * dot(sp.viewDir, h) * h - sp.viewDir);
+        float theta = acos(sqrt(1. - hammersleyPoint.x));
+
+        float NoL = max(dot(sp.tb.normal, l), 0.0);
+
+        if (NoL > 0.0) {
+            float NoH = max(dot(sp.tb.normal, h), 0.0);
+            float VoH = max(dot(h, sp.viewDir), 0.0);
+
+            float D = distributionGgx(NoH, sp.roughness);
+
+            float pdf = D * NoH / ((4.0 * VoH) + 0.0001);
+
+            // clang-format off
+            const float resolution = float({{ ibl.cubemap_size }});
+            const float roughness_levels = float({{ ibl.prefilter_map_roughnes_levels - 1 }});
+            // clang-format on
+
+            float saTexel = 4.0 * PI / (roughness_levels * resolution * resolution);
+            float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 0.0001);
+            // sample from the environment's mip level based on roughness/pdf
+            float mipLevel = sp.roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
+
+            vec3 fresnel = fresnelSchlick(sp.f0, VoH);
+            float V = visibilitySmithHeightCorrelated(sp.NoV, NoL, sp.roughness);
+            vec3 brdf = V * D * fresnel;
+
+            // totalSpecular += (brdf / pdf) * textureLod(cubemap, l, mipLevel).rgb * NoL * cos(theta);
+            totalSpecular += (brdf / pdf) * texture(cubemap, l).rgb * NoL * cos(theta);
+        }
+    }
+
+    totalSpecular /= SAMPLE_COUNT;
+
+    return /* iblDiffuse + */ (totalSpecular);
+}
+
 ShadingParams initShadingParams()
 {
     ShadingParams sp;
@@ -226,23 +305,23 @@ ShadingParams initShadingParams()
     sp.viewDir = normalize(camPos.xyz - vsOut.fragPos);
 
 #ifdef NORMAL_MAP
-    sp.normal = getNormalFromMap(normalTex, normalScale, sp.viewDir);
+    sp.tb = getNormalFromMap(normalTex, normalScale, sp.viewDir);
 #else
-    sp.normal = normalize(vsOut.normal);
+    sp.tb.normal = normalize(vsOut.normal);
 #endif
 
-    sp.NoV = max(dot(sp.normal, sp.viewDir), 0.0);
+    sp.NoV = max(dot(sp.tb.normal, sp.viewDir), 0.0);
 
     // Disney roughness remapping
-    float perceptualRoughness = roughnessFactor;
+    float linearRoughness = roughnessFactor;
     sp.metalness = metallicFactor;
 #ifdef MR_MAP
-    perceptualRoughness *= texture(mrTex, vsOut.texCoords).g;
+    linearRoughness *= texture(mrTex, vsOut.texCoords).g;
     sp.metalness *= texture(mrTex, vsOut.texCoords).b;
 #endif
 
     // Prevent division by 0
-    sp.roughness = perceptualRoughness * perceptualRoughness;
+    sp.roughness = linearRoughness * linearRoughness;
     sp.roughness = clamp(sp.roughness, ROUGHNESS_MIN, 1.0);
 
     sp.f0 = vec3(DIELECTRIC_FRESNEL);
@@ -269,12 +348,12 @@ ShadingParams initShadingParams()
     }
 
 #ifdef CLEARCOAT_NORMAL_MAP
-    sp.clearcoatNormal = getNormalFromMap(clearcoatNormalTex, clearcoatNormalScale, sp.viewDir);
+    sp.clearcoatTb = getNormalFromMap(clearcoatNormalTex, clearcoatNormalScale, sp.viewDir);
 #else
     // https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_clearcoat/README.md
     // If clearcoatNormalTexture is not given, no normal mapping is applied to the clear coat layer,
     // even if normal mapping is applied to the base material.
-    sp.clearcoatNormal = normalize(vsOut.normal);
+    sp.clearcoatTb.normal = normalize(vsOut.normal);
 #endif
     sp.clearcoatNoV = max(dot(sp.clearcoatNormal, sp.viewDir), 0.0);
 
@@ -290,7 +369,11 @@ void main()
     vec3 color = vec3(0.);
 
     if (IBLEnabled) {
-        color += calculateIBL(sp);
+        if (realtimeIBL) {
+            color += performRealtimeIBL(sp);
+        } else {
+            color += calculateIBL(sp);
+        }
     }
 
     if (directLightEnabled) {

@@ -39,6 +39,24 @@ impl AppSettings {
     }
 }
 
+#[repr(u32)]
+#[derive(PartialEq, Clone, Copy, bytemuck::NoUninit)]
+pub enum DiffuseType {
+    Lambert = 0,
+    Frostbite = 1,
+    CodWWII = 2,
+}
+
+impl DiffuseType {
+    pub fn to_str(self) -> &'static str {
+        match self {
+            DiffuseType::Lambert => "Lambert",
+            DiffuseType::Frostbite => "Frostbite",
+            DiffuseType::CodWWII => "CoD: WWII",
+        }
+    }
+}
+
 #[derive(PartialEq, Clone, Copy)]
 pub enum MaterialSrc {
     Gltf,

@@ -100,7 +100,6 @@ impl Renderer {
 
         let app_settings = self.app_settings.get();
         let selected_scene = app_settings.selected_scene;
-        if app_settings.material_src == MaterialSrc::MerlBrdf {}
 
         self.pbr_settings.inner = app_settings.pbr_settings;
         self.pbr_settings.update();
@@ -284,6 +283,7 @@ impl Renderer {
             gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.ibl.textures.irradiance_tex_id.id);
             gl::BindTextureUnit(ogl::PREFILTER_PORT, self.ibl.textures.prefilter_tex_id.id);
             gl::BindTextureUnit(ogl::BRDF_PORT, self.ibl.textures.brdf_lut_id.id);
+            gl::BindTextureUnit(ogl::CUBEMAP_PORT, self.cubemap.id);
         }
     }
 

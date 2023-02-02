@@ -31,8 +31,8 @@ out vec4 FragColor;
 // Parameters that stay same for the whole pixel
 struct ShadingParams {
     vec3 viewDir;
-    vec3 normal;
     float NoV;
+    NormalBasis tb;
 };
 
 vec3 calculateDirectLighting(ShadingParams sp)
@@ -45,21 +45,21 @@ vec3 calculateDirectLighting(ShadingParams sp)
 
         vec3 lightDir = normalize(lightPositions[i].xyz - vsOut.fragPos);
 
-        // FIXME: check NoV > 0 and NoL > 0
+        float NoL = dot(sp.tb.normal, lightDir);
 
 #ifdef MERL_BRDF
-        vec3 brdf = lookup_brdf_merl(lightDir, sp.viewDir, sp.normal, vsOut.tangent, vsOut.bitangent);
+        vec3 brdf = lookup_brdf_merl(lightDir, sp.viewDir, sp.tb.normal, sp.tb.tangent, sp.tb.bitangent);
 #endif
 
 #ifdef MIT_BRDF
-        vec3 brdf = lookup_brdf_mit(lightDir, sp.viewDir, sp.normal, vsOut.tangent, vsOut.bitangent);
+        vec3 brdf = lookup_brdf_mit(lightDir, sp.viewDir, sp.tb.normal, sp.tb.tangent, sp.tb.bitangent);
 #endif
 
 #ifdef UTIA_BRDF
-        vec3 brdf = lookup_brdf_utia(lightDir, sp.viewDir, sp.normal, vsOut.tangent, vsOut.bitangent);
+        vec3 brdf = lookup_brdf_utia(lightDir, sp.viewDir, sp.tb.normal, sp.tb.tangent, sp.tb.bitangent);
 #endif
 
-        totalRadiance += radiance * brdf;
+        totalRadiance += radiance * brdf * NoL;
     }
 
     return totalRadiance;
@@ -67,7 +67,7 @@ vec3 calculateDirectLighting(ShadingParams sp)
 
 vec3 calculateIBL(ShadingParams sp)
 {
-    vec3 reflectDir = reflect(-sp.viewDir, sp.normal);
+    vec3 reflectDir = reflect(-sp.viewDir, sp.tb.normal);
     return texture(rawBrdfMap, reflectDir).rgb;
 }
 
@@ -78,12 +78,12 @@ ShadingParams initShadingParams()
     sp.viewDir = normalize(camPos.xyz - vsOut.fragPos);
 
 #ifdef NORMAL_MAP
-    sp.normal = getNormalFromMap(normalTex, normalScale, sp.viewDir);
+    sp.tb = getNormalFromMap(normalTex, normalScale, sp.viewDir);
 #else
-    sp.normal = normalize(vsOut.normal);
+    sp.tb.normal = normalize(vsOut.normal);
 #endif
 
-    sp.NoV = dot(sp.normal, sp.viewDir);
+    sp.NoV = dot(sp.tb.normal, sp.viewDir);
 
     return sp;
 }

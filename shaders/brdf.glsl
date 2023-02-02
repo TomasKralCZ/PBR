@@ -93,3 +93,46 @@ float anisotropicVSmithGgxCorrelated(
     return v;
 }
 #endif
+
+const uint DIFFUSE_TYPE_LAMBERT = 0;
+const uint DIFFUSE_TYPE_FROSTBITE = 1;
+const uint DIFFUSE_TYPE_CODWWII = 2;
+
+// For diffuse BRDFs, divide by PI is done later
+
+vec3 diffuseLambert(vec3 albedo) { return albedo; }
+
+float disneyFresnelSchlick(float fd90, float NoX) { return 1. + (fd90 - 1.) * pow(1. - NoX, 5.); }
+
+// Moving Frostbite to Physically Based Rendering 3.0
+vec3 diffuseFrostbite(vec3 albedo, float roughness, float NoL, float LoH, float NoV)
+{
+    float energyBias = mix(0., 0.5, roughness);
+    float energyFactor = mix(1., 1. / 1.51, roughness);
+    float fd90 = energyBias + 2. * LoH * LoH * roughness;
+
+    float lightScatter = disneyFresnelSchlick(fd90, NoL);
+    float viewScatter = disneyFresnelSchlick(fd90, NoV);
+
+    return albedo * lightScatter * viewScatter * energyFactor;
+}
+
+// Material advances in Call of Duty: WWII
+vec3 diffuseCodWWII(vec3 albedo, float roughness, float NoL, float LoH, float NoH, float NoV)
+{
+    float f0 = LoH + pow(1. - LoH, 5.);
+    float f1 = (1. - 0.75 * pow(1. - NoL, 5.)) * (1. - 0.75 * pow(1. - NoV, 5.));
+
+    // They use gloss with a special parametrization instead of roughness
+    float asq = roughness * roughness;
+    float g = log2((2. / asq) - 1.) / 18.;
+
+    float t = clamp(2.2 * g - 0.5, 0., 1.);
+    float fd = f0 + (f1 - f0) * t;
+
+    float gsq = g * g;
+    float expo = -sqrt(NoH) * max(73.2 * g - 21.2, 8.9);
+    float fb = (34.5 * gsq - 59 * g + 24.5) * LoH * pow(2., expo);
+
+    return albedo * (fd + fb);
+}

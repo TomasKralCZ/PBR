@@ -35,3 +35,4 @@ layout(binding = 8) uniform samplerCube irradianceMap;
 layout(binding = 9) uniform samplerCube prefilterMap;
 layout(binding = 10) uniform sampler2D brdfLut;
 layout(binding = 11) uniform samplerCube rawBrdfMap;
+layout(binding = 12) uniform samplerCube cubemap;

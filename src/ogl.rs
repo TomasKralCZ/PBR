@@ -38,6 +38,7 @@ pub const IRRADIANCE_PORT: u32 = 8;
 pub const PREFILTER_PORT: u32 = 9;
 pub const BRDF_PORT: u32 = 10;
 pub const RAW_BRDF_PORT: u32 = 11;
+pub const CUBEMAP_PORT: u32 = 12;
 
 // Buffer bindings
 pub const TRANSFORM_BINDING: u32 = 0;

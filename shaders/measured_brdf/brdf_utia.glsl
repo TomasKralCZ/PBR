@@ -102,7 +102,7 @@ vec3 lookup_brdf_utia(vec3 toLight, vec3 toViewer, vec3 normal, vec3 tangent, ve
     float NoV = dot(normal, toViewer);
 
     if (NoL < 0 || NoV < 0) {
-        return vec3(0, 0, 0);
+        return vec3(0.);
     }
 
     float theta_in = acos(NoL);

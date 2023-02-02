@@ -38,6 +38,7 @@ impl Resources {
         add_scene("resources/gltf/shader_ball/shaderBall.glb");
         add_scene("resources/gltf/Sphere.glb");
         add_scene("resources/gltf/Cylinder.gltf");
+        add_scene("resources/gltf/Cube.glb");
 
         let mut merl_brdfs = Vec::new();
         for brdf in globwalk::glob("resources/BRDFDatabase/brdfs/*.binary").unwrap() {
@@ -48,6 +49,8 @@ impl Resources {
                 }
             }
         }
+
+        merl_brdfs.sort_by(|m1, m2| m1.name().cmp(m2.name()));
 
         let mut mit_brdfs = Vec::new();
 

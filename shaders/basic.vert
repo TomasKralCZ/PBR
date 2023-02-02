@@ -35,7 +35,7 @@ void main()
     vsOut.normal = normalize(normalMat * inNormal);
     vsOut.tangent = normalize(normalMat * inTangent.w * inTangent.xyz);
 
-    // Gram-Schmidt process
+    // modified Gram-Schmidt process
     vsOut.tangent = normalize(vsOut.tangent - dot(vsOut.tangent, vsOut.normal) * vsOut.normal);
 
     // Correct handedness with tangent.w
