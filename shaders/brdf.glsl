@@ -46,7 +46,7 @@ float geometrySmithHeightCorrelatedGgx(float NoV, float NoL, float roughness)
     return 2 / (denoml + denomv);
 }
 
-float visibilitySmithHeightCorrelated(float NoV, float NoL, float roughness)
+float visibilitySmithHeightCorrelatedGgx(float NoV, float NoL, float roughness)
 {
     float asq = roughness * roughness;
     float NoVsq = NoV * NoV;
@@ -64,8 +64,8 @@ float distributionAnisotropicGgx(
     float roughness, float NoH, vec3 halfway, vec3 tangent, vec3 bitangent, float anisotropy)
 {
     // Remapping from: Kulla and Conty, “Revisiting Physically Based Shading at Imageworks.”
-    float tRoughness = max(roughness * (1.0 + anisotropy), ROUGHNESS_MIN);
-    float bRoughness = max(roughness * (1.0 - anisotropy), ROUGHNESS_MIN);
+    float tRoughness = max(roughness * (1. + anisotropy), ROUGHNESS_MIN);
+    float bRoughness = max(roughness * (1. - anisotropy), ROUGHNESS_MIN);
 
     float ToH = dot(tangent, halfway);
     float BoH = dot(bitangent, halfway);
@@ -75,11 +75,11 @@ float distributionAnisotropicGgx(
 
     denom = denom * denom;
 
-    return (1.0 / (PI * tRoughness * bRoughness)) * (1.0 / denom);
+    return 1. / (PI * tRoughness * bRoughness * denom);
 }
 
 // Taken from: Guy and Agopian, “Physically Based Rendering in Filament.”
-float anisotropicVSmithGgxCorrelated(
+float visibilitySmithHeightCorrelatedGgxAniso(
     float roughness, float NoV, float ToV, float BoV, float ToL, float BoL, float NoL, float anisotropy)
 {
     // Remapping from: Kulla and Conty, “Revisiting Physically Based Shading at Imageworks.”
@@ -123,7 +123,8 @@ vec3 diffuseCodWWII(vec3 albedo, float roughness, float NoL, float LoH, float No
     float f0 = LoH + pow(1. - LoH, 5.);
     float f1 = (1. - 0.75 * pow(1. - NoL, 5.)) * (1. - 0.75 * pow(1. - NoV, 5.));
 
-    // They use gloss with a special parametrization instead of roughness
+    // convert roughness to gloss
+    // they use gloss with a special parametrization instead of roughness
     float asq = roughness * roughness;
     float g = log2((2. / asq) - 1.) / 18.;
 

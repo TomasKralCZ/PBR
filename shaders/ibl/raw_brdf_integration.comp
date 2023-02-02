@@ -61,7 +61,7 @@ void main()
         sampleDir = normalize(sampleDir);
 
 #ifdef MERL_BRDF
-        vec3 brdf = lookup_brdf_merl(sampleDir, normalize(normal - vec3(0.1)), normal, right, up);
+        vec3 brdf = lookup_brdf_merl(sampleDir, normal, normal, right, up);
         float normalizer = 16.;
 #endif
 

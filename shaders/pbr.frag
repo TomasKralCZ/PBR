@@ -51,7 +51,7 @@ vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway, vec3 light
 
     // clearcoat BRDF
     float D = distributionGgx(clearcoatNoH, sp.clearcoatRoughness);
-    float V = visibilitySmithHeightCorrelated(sp.NoV, clearcoatNoL, sp.clearcoatRoughness);
+    float V = visibilitySmithHeightCorrelatedGgx(sp.NoV, clearcoatNoL, sp.clearcoatRoughness);
     // Coating IOR is 1.5 (f0 == 0.04) - equivalent to polyurethane
     fresnel = fresnelSchlick(DIELECTRIC_FRESNEL, VoH) * sp.clearcoatIntensity;
 
@@ -71,8 +71,8 @@ void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 f
     float ToL = dot(sp.tb.tangent, lightDir);
     float BoL = dot(sp.tb.bitangent, lightDir);
 
-    // Visibility term (G divided with denominator)
-    float V = anisotropicVSmithGgxCorrelated(sp.roughness, sp.NoV, ToV, BoV, ToL, BoL, NoL, anisotropy);
+    float V
+        = visibilitySmithHeightCorrelatedGgxAniso(sp.roughness, sp.NoV, ToV, BoV, ToL, BoL, NoL, anisotropy);
 
     fresnel = fresnelSchlick(sp.f0, VoH);
     specular = D * V * fresnel;
@@ -84,7 +84,7 @@ void baseSpecularIsotropic(
 {
     float D = distributionGgx(NoH, sp.roughness);
     fresnel = fresnelSchlick(sp.f0, VoH);
-    float V = visibilitySmithHeightCorrelated(sp.NoV, NoL, sp.roughness);
+    float V = visibilitySmithHeightCorrelatedGgx(sp.NoV, NoL, sp.roughness);
     specular = V * D * fresnel;
 }
 
@@ -106,7 +106,11 @@ vec3 calculateDirectLighting(ShadingParams sp)
         vec3 fresnel;
         vec3 specular;
 #ifdef ANISOTROPY
-        baseSpecularAnisotropic(sp, specular, fresnel, NoH, NoL, VoH, halfway, lightDir);
+        if (anisotropy != 0.) {
+            baseSpecularAnisotropic(sp, specular, fresnel, NoH, NoL, VoH, halfway, lightDir);
+        } else {
+            baseSpecularIsotropic(sp, specular, fresnel, NoH, NoL, VoH);
+        }
 #else
         baseSpecularIsotropic(sp, specular, fresnel, NoH, NoL, VoH);
 #endif
@@ -278,7 +282,7 @@ vec3 performRealtimeIBL(ShadingParams sp)
             float mipLevel = sp.roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
 
             vec3 fresnel = fresnelSchlick(sp.f0, VoH);
-            float V = visibilitySmithHeightCorrelated(sp.NoV, NoL, sp.roughness);
+            float V = visibilitySmithHeightCorrelatedGgx(sp.NoV, NoL, sp.roughness);
             vec3 brdf = V * D * fresnel;
 
             // totalSpecular += (brdf / pdf) * textureLod(cubemap, l, mipLevel).rgb * NoL * cos(theta);
@@ -308,6 +312,8 @@ ShadingParams initShadingParams()
     sp.tb = getNormalFromMap(normalTex, normalScale, sp.viewDir);
 #else
     sp.tb.normal = normalize(vsOut.normal);
+    sp.tb.tangent = normalize(vsOut.tangent);
+    sp.tb.bitangent = normalize(vsOut.bitangent);
 #endif
 
     sp.NoV = max(dot(sp.tb.normal, sp.viewDir), 0.0);

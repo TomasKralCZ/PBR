@@ -58,8 +58,7 @@ impl ShaderDefines for PbrDefines {
             (self.clearcoat_intensity_map, "CLEARCOAT_INTENSITY_MAP"),
             (self.clearcoat_roughness_map, "CLEARCOAT_ROUGHNESS_MAP"),
             (self.clearcoat_normal_map, "CLEARCOAT_NORMAL_MAP"),
-            // TODO(high): work on anisotropy
-            //(self.anisotropy_enabled, "ANISOTROPY"),
+            (self.anisotropy_enabled, "ANISOTROPY"),
         ];
 
         for (field, define) in fiels_defines {

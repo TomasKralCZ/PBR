@@ -81,6 +81,8 @@ ShadingParams initShadingParams()
     sp.tb = getNormalFromMap(normalTex, normalScale, sp.viewDir);
 #else
     sp.tb.normal = normalize(vsOut.normal);
+    sp.tb.tangent = normalize(vsOut.tangent);
+    sp.tb.bitangent = normalize(vsOut.bitangent);
 #endif
 
     sp.NoV = dot(sp.tb.normal, sp.viewDir);
