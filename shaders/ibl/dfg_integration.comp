@@ -22,6 +22,8 @@ vec2 integrateDfg(float NoV, float roughness)
 
     vec3 N = vec3(0., 0., 1.);
 
+    roughness = roughness * roughness;
+
     const uint SAMPLE_COUNT = 1024u;
     for (uint i = 0u; i < SAMPLE_COUNT; i++) {
         vec2 Xi = hammersley(i, SAMPLE_COUNT);

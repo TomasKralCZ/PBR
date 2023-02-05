@@ -172,7 +172,7 @@ impl Ibl {
 
                 for lod in 0..IBL.prefilter_map_roughnes_levels {
                     let roughness = lod as f32 / (IBL.prefilter_map_roughnes_levels as f32 - 1.);
-                    prefilter_shader.set_f32(roughness, cstr!("perceptualRoughness"));
+                    prefilter_shader.set_f32(roughness, cstr!("linearRoughness"));
 
                     gl::BindImageTexture(
                         1,

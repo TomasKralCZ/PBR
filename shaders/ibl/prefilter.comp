@@ -10,7 +10,7 @@ layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 layout(binding = 0) uniform samplerCube cubemap;
 layout(rgba32f, binding = 1) uniform writeonly imageCube prefilterMap;
 
-uniform float perceptualRoughness;
+uniform float linearRoughness;
 
 void main()
 {
@@ -25,7 +25,7 @@ void main()
     vec3 prefilteredColor = vec3(0.0);
     float totalWeight = 0.0;
 
-    float roughness = perceptualRoughness * perceptualRoughness;
+    float roughness = linearRoughness * linearRoughness;
 
     for (uint i = 0u; i < SAMPLE_COUNT; ++i) {
         // generates a sample vector that's biased towards the preferred alignment

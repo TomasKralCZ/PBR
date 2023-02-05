@@ -15,7 +15,7 @@ vec2 hammersley(uint i, uint N) { return vec2(float(i) / float(N), radicalInvers
 
 vec3 importanceSampleGgx(vec2 Xi, vec3 N, float roughness)
 {
-    float a = roughness * roughness;
+    float a = roughness;
 
     float phi = 2.0 * PI * Xi.x;
     float cosTheta = sqrt((1.0 - Xi.y) / (1.0 + (a * a - 1.0) * Xi.y));
