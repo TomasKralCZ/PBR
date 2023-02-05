@@ -1,0 +1,59 @@
+#version 460 core
+// clang-format off
+
+{% include "consts.glsl" %}
+{% include "ibl/brdf_sampling.glsl" %}
+{% include "brdf.glsl" %}
+
+layout(local_size_x = {{ ibl.local_size_xy }}, local_size_y = {{ ibl.local_size_xy }}, local_size_z = 1) in;
+// clang-format on
+
+layout(rg32f, binding = 0) uniform writeonly image2D brdfLut;
+
+vec2 integrateDfg(float NoV, float roughness)
+{
+    vec3 V;
+    V.x = sqrt(1. - NoV * NoV);
+    V.y = 0.;
+    V.z = NoV;
+
+    float DFG1 = 0.;
+    float DFG2 = 0.;
+
+    vec3 N = vec3(0., 0., 1.);
+
+    const uint SAMPLE_COUNT = 1024u;
+    for (uint i = 0u; i < SAMPLE_COUNT; i++) {
+        vec2 Xi = hammersley(i, SAMPLE_COUNT);
+        vec3 H = importanceSampleGgx(Xi, N, roughness);
+        vec3 L = normalize(2.0 * dot(V, H) * H - V);
+
+        float NoL = clamp(L.z, 0., 1.);
+        float NoH = clamp(H.z, 0., 1.);
+
+        float VoH = clamp(dot(V, H), 0., 1.);
+
+        if (NoL > 0.) {
+            float G = geometrySmithHeightCorrelatedGgx(NoV, NoL, roughness);
+            float G_Vis = (G * VoH) / (NoH * NoV);
+
+            float Fc = pow(1. - VoH, 5.);
+            DFG1 += (1. - Fc) * G_Vis;
+            DFG2 += Fc * G_Vis;
+        }
+    }
+
+    return vec2(DFG1, DFG2) / float(SAMPLE_COUNT);
+}
+
+void main()
+{
+    uvec2 globalId = gl_GlobalInvocationID.xy;
+    // Remap invocation coords to LUT coords.
+    // Technically it should be globalID / (image size + 1),
+    // but that goes from <0, 1>, which results in NaNs.
+    vec2 lutCoords = vec2(globalId.xy + 1) / vec2(imageSize(brdfLut).xy);
+
+    vec2 integratedDfg = integrateDfg(lutCoords.x, lutCoords.y);
+    imageStore(brdfLut, ivec2(globalId.xy), vec4(integratedDfg, 0., 0.));
+}

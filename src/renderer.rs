@@ -282,7 +282,7 @@ impl Renderer {
         unsafe {
             gl::BindTextureUnit(ogl::IRRADIANCE_PORT, self.ibl.textures.irradiance_tex_id.id);
             gl::BindTextureUnit(ogl::PREFILTER_PORT, self.ibl.textures.prefilter_tex_id.id);
-            gl::BindTextureUnit(ogl::BRDF_PORT, self.ibl.textures.brdf_lut_id.id);
+            gl::BindTextureUnit(ogl::BRDF_PORT, self.ibl.textures.dfg_lut_id.id);
             gl::BindTextureUnit(ogl::CUBEMAP_PORT, self.cubemap.id);
         }
     }

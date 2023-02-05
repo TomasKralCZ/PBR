@@ -151,9 +151,33 @@ impl GuiCtx {
                 ));
                 ui.separator();
 
-                ui.color_edit_button_rgba_unmultiplied(
-                    &mut app_settings.pbr_material_override.base_color_factor,
-                );
+                let color = &mut app_settings.pbr_material_override.base_color_factor;
+
+                ui.color_edit_button_rgba_unmultiplied(color);
+
+                ui.horizontal(|ui| {
+                    let mut color = app_settings.pbr_material_override.base_color_factor;
+                    color = color.map(|f| f * 255.);
+
+                    use egui::DragValue;
+                    ui.add(
+                        DragValue::new(&mut color[0])
+                            .prefix("r: ")
+                            .clamp_range(0.0..=255.0),
+                    );
+                    ui.add(
+                        DragValue::new(&mut color[1])
+                            .prefix("g: ")
+                            .clamp_range(0.0..=255.0),
+                    );
+                    ui.add(
+                        DragValue::new(&mut color[2])
+                            .prefix("b: ")
+                            .clamp_range(0.0..=255.0),
+                    );
+
+                    app_settings.pbr_material_override.base_color_factor = color.map(|f| f / 255.);
+                });
 
                 ui.add(
                     egui::Slider::new(

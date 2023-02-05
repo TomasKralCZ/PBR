@@ -19,7 +19,7 @@ const CUBEMAP_FACES: u32 = 6;
 const IRRADIANCE_MAP_SIZE: i32 = 64;
 const PREFILTER_MAP_SIZE: i32 = 256;
 const MEASURED_BRDF_MAP_SIZE: u32 = 128;
-const BRDF_LUT_SIZE: i32 = 512;
+const BRDF_LUT_SIZE: i32 = 256;
 
 pub struct Ibl {
     pub textures: IblTextures,
@@ -28,7 +28,7 @@ pub struct Ibl {
 pub struct IblTextures {
     pub irradiance_tex_id: GlTexture,
     pub prefilter_tex_id: GlTexture,
-    pub brdf_lut_id: GlTexture,
+    pub dfg_lut_id: GlTexture,
 }
 
 impl Ibl {
@@ -72,12 +72,12 @@ impl Ibl {
     fn compute_ibl(cubemap_tex_id: TextureId) -> Result<IblTextures> {
         let irradiance_tex_id = Self::compute_irradiance_map(cubemap_tex_id)?;
         let prefilter_tex_id = Self::compute_prefilter_map(cubemap_tex_id)?;
-        let brdf_lut_id = Self::brdf_integration()?;
+        let dfg_lut_id = Self::dfg_integration()?;
 
         let textures = IblTextures {
             irradiance_tex_id,
             prefilter_tex_id,
-            brdf_lut_id,
+            dfg_lut_id,
         };
 
         Ok(textures)
@@ -115,7 +115,7 @@ impl Ibl {
     }
 
     /// Computes the BRDF part of the specular integral
-    fn brdf_integration() -> Result<GlTexture> {
+    fn dfg_integration() -> Result<GlTexture> {
         let brdf_lut = GlTexture::new(gl::TEXTURE_2D);
 
         unsafe {
@@ -127,11 +127,11 @@ impl Ibl {
             gl::TextureParameteri(brdf_lut.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
         };
 
-        let brdf_integration_shader =
-            Shader::comp_with_path("shaders_stitched/brdf_integration.comp")?;
+        let dfg_integration_shader =
+            Shader::comp_with_path("shaders_stitched/dfg_integration.comp")?;
 
-        gl_time_query("split_sum brdf integration", || {
-            brdf_integration_shader.use_shader(|| unsafe {
+        gl_time_query("split_sum dfg integration", || {
+            dfg_integration_shader.use_shader(|| unsafe {
                 gl::BindImageTexture(0, brdf_lut.id, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::RG32F);
 
                 gl::DispatchCompute(
