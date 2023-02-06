@@ -180,7 +180,7 @@ vec3 calculateIBL(ShadingParams sp)
     vec3 reflectDir = reflect(-sp.viewDir, sp.tb.normal);
 #endif
     // clang-format off
-    const float MAX_REFLECTION_LOD = float({{ ibl.prefilter_map_roughnes_levels - 1 }});
+    const float MAX_REFLECTION_LOD = float({{ ibl.cubemap_roughnes_levels - 1 }});
     // clang-format on
     vec3 prefilteredLight = textureLod(prefilterMap, reflectDir, sp.roughness * MAX_REFLECTION_LOD).rgb;
     vec2 dfg = texture(brdfLut, vec2(sp.NoV, sp.roughness)).rg;
@@ -236,64 +236,6 @@ void modifyBaseF0(inout vec3 f0, float clearcoatIntensity)
     f0 = mix(f0, newF0, clearcoatIntensity);
 }
 #endif
-
-vec3 performRealtimeIBL(ShadingParams sp)
-{
-    // Diffuse
-    vec3 F = fresnelSchlickRoughness(sp.NoV, sp.f0, sp.roughness);
-    vec3 kD = 1.0 - F;
-    kD *= 1.0 - sp.metalness;
-
-    vec3 irradiance = texture(irradianceMap, sp.tb.normal).rgb;
-    vec3 iblDiffuse = irradiance * sp.albedo.rgb;
-
-    // Specular
-    const uint SAMPLE_COUNT = 128u;
-    vec3 color = vec3(0.);
-    // float totalWeight = 0.;
-    vec3 totalSpecular = vec3(0.);
-
-    for (uint i = 0u; i < SAMPLE_COUNT; i++) {
-        // generates a sample vector that's biased towards the preferred alignment
-        // direction (importance sampling).
-        vec2 hammersleyPoint = hammersley(i, SAMPLE_COUNT);
-        vec3 h = importanceSampleGgx(hammersleyPoint, sp.tb.normal, sp.roughness);
-        vec3 l = normalize(2.0 * dot(sp.viewDir, h) * h - sp.viewDir);
-        float theta = acos(sqrt(1. - hammersleyPoint.x));
-
-        float NoL = max(dot(sp.tb.normal, l), 0.0);
-
-        if (NoL > 0.0) {
-            float NoH = max(dot(sp.tb.normal, h), 0.0);
-            float VoH = max(dot(h, sp.viewDir), 0.0);
-
-            float D = distributionGgx(NoH, sp.roughness);
-
-            float pdf = D * NoH / ((4.0 * VoH) + 0.0001);
-
-            // clang-format off
-            const float resolution = float({{ ibl.cubemap_size }});
-            const float roughness_levels = float({{ ibl.prefilter_map_roughnes_levels - 1 }});
-            // clang-format on
-
-            float saTexel = 4.0 * PI / (roughness_levels * resolution * resolution);
-            float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 0.0001);
-            // sample from the environment's mip level based on roughness/pdf
-            float mipLevel = sp.roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
-
-            vec3 fresnel = fresnelSchlick(sp.f0, VoH);
-            float V = visibilitySmithHeightCorrelatedGgx(sp.NoV, NoL, sp.roughness);
-            vec3 brdf = V * D * fresnel;
-
-            // totalSpecular += (brdf / pdf) * textureLod(cubemap, l, mipLevel).rgb * NoL * cos(theta);
-            totalSpecular += (brdf / pdf) * texture(cubemap, l).rgb * NoL * cos(theta);
-        }
-    }
-
-    totalSpecular /= SAMPLE_COUNT;
-
-    return /* iblDiffuse + */ (totalSpecular);
-}
 
 ShadingParams initShadingParams()
 {
@@ -375,11 +317,7 @@ void main()
     vec3 color = vec3(0.);
 
     if (IBLEnabled) {
-        if (realtimeIBL) {
-            color += performRealtimeIBL(sp);
-        } else {
-            color += calculateIBL(sp);
-        }
+        color += calculateIBL(sp);
     }
 
     if (directLightEnabled) {

@@ -99,12 +99,10 @@ impl GuiCtx {
             let mut clearcoat_enabled = app_settings.pbr_settings.clearcoat_enabled();
             let mut direct_light_enabled = app_settings.pbr_settings.direct_light_enabled();
             let mut ibl_enabled = app_settings.pbr_settings.ibl_enabled();
-            let mut realtime_ibl = app_settings.pbr_settings.realtime_ibl();
 
             ui.checkbox(&mut clearcoat_enabled, "Clearcoat enabled");
             ui.checkbox(&mut direct_light_enabled, "Direct light enabled");
             ui.checkbox(&mut ibl_enabled, "IBL enabled");
-            ui.checkbox(&mut realtime_ibl, "Realtime IBL");
 
             app_settings
                 .pbr_settings
@@ -113,7 +111,6 @@ impl GuiCtx {
                 .pbr_settings
                 .set_direct_light_enabled(direct_light_enabled);
             app_settings.pbr_settings.set_ibl_enabled(ibl_enabled);
-            app_settings.pbr_settings.set_realtime_ibl(realtime_ibl);
 
             ui.group(|ui| {
                 ui.label("Diffuse BRDF");

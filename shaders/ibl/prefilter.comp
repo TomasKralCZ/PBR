@@ -64,12 +64,12 @@ void main()
 
             // clang-format off
             const float resolution = float({{ ibl.cubemap_size }});
-            const float roughness_levels = float({{ ibl.prefilter_map_roughnes_levels - 1 }});
+            const float roughness_levels = float({{ ibl.cubemap_roughnes_levels - 1 }});
             // clang-format on
 
             float omegaP = 4. * PI / (roughness_levels * resolution * resolution);
             float omegaS = 1. / (float(SAMPLE_COUNT) * pdf);
-            float mipLevel = clamp(0.5 * log2(omegaS / omegaP), 0., roughness_levels);
+            float mipLevel = roughness == 0. ? 0. : 0.5 * log2(omegaS / omegaP);
 
             prefilteredColor += textureLod(cubemap, l, mipLevel).rgb * NoL;
             totalWeight += NoL;

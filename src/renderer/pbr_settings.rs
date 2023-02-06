@@ -11,7 +11,6 @@ pub struct PbrSettings {
     clearcoat_enabled: u32,
     direct_light_enabled: u32,
     ibl_enabled: u32,
-    realtime_ibl: u32,
     pub diffuse_type: DiffuseType,
 }
 
@@ -21,7 +20,6 @@ impl PbrSettings {
             clearcoat_enabled: 1,
             direct_light_enabled: 1,
             ibl_enabled: 1,
-            realtime_ibl: 0,
             diffuse_type: DiffuseType::Lambert,
         }
     }
@@ -38,10 +36,6 @@ impl PbrSettings {
         self.ibl_enabled = if ibl_enabled { 1 } else { 0 };
     }
 
-    pub fn set_realtime_ibl(&mut self, realtime_ibl: bool) {
-        self.realtime_ibl = if realtime_ibl { 1 } else { 0 };
-    }
-
     pub fn clearcoat_enabled(&self) -> bool {
         self.clearcoat_enabled != 0
     }
@@ -52,10 +46,6 @@ impl PbrSettings {
 
     pub fn ibl_enabled(&self) -> bool {
         self.ibl_enabled != 0
-    }
-
-    pub fn realtime_ibl(&self) -> bool {
-        self.realtime_ibl != 0
     }
 }
 

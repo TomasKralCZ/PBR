@@ -152,7 +152,7 @@ impl Ibl {
 
         unsafe {
             let size = PREFILTER_MAP_SIZE;
-            let levels = IBL.prefilter_map_roughnes_levels;
+            let levels = IBL.cubemap_roughnes_levels;
             gl::TextureStorage2D(prefilter_tex.id, levels, gl::RGBA32F, size, size);
 
             let clamp = gl::CLAMP_TO_EDGE as i32;
@@ -170,8 +170,8 @@ impl Ibl {
             prefilter_shader.use_shader(|| unsafe {
                 gl::BindTextureUnit(0, cubemap_tex_id);
 
-                for lod in 0..IBL.prefilter_map_roughnes_levels {
-                    let roughness = lod as f32 / (IBL.prefilter_map_roughnes_levels as f32 - 1.);
+                for lod in 0..IBL.cubemap_roughnes_levels {
+                    let roughness = lod as f32 / (IBL.cubemap_roughnes_levels as f32 - 1.);
                     prefilter_shader.set_f32(roughness, cstr!("linearRoughness"));
 
                     gl::BindImageTexture(
@@ -236,13 +236,13 @@ fn create_cubemap_texture(size: i32, internal_typ: GLenum) -> GlTexture {
     let tex = GlTexture::new(gl::TEXTURE_CUBE_MAP);
 
     unsafe {
-        gl::TextureStorage2D(tex.id, 1, internal_typ, size, size);
+        gl::TextureStorage2D(tex.id, IBL.cubemap_roughnes_levels, internal_typ, size, size);
 
         let clamp = gl::CLAMP_TO_EDGE as i32;
         gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_S, clamp);
         gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_T, clamp);
         gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_R, clamp);
-        gl::TextureParameteri(tex.id, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+        gl::TextureParameteri(tex.id, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR as i32);
         gl::TextureParameteri(tex.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
     }
 
