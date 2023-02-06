@@ -8,6 +8,7 @@
 
 layout(local_size_x = {{ ibl.local_size_xy }}, local_size_y = {{ ibl.local_size_xy }}
     , local_size_z = {{ ibl.local_size_z }}) in;
+// clang-format on
 
 layout(binding = 0) uniform samplerCube cubemap;
 layout(rgba32f, binding = 1) uniform writeonly imageCube prefilterMap;
@@ -20,41 +21,55 @@ void main()
     vec3 normal = directionFromCubemapUv(globalId, imageSize(prefilterMap).x);
 
     vec3 n = normalize(normal);
-    // make the simplyfying assumption that V equals R equals the normal
     vec3 v = n;
 
     const uint SAMPLE_COUNT = 1024u;
-    vec3 prefilteredColor = vec3(0.0);
-    float totalWeight = 0.0;
+    vec3 prefilteredColor = vec3(0.);
+    float totalWeight = 0.;
 
     float roughness = linearRoughness * linearRoughness;
 
-    for (uint i = 0u; i < SAMPLE_COUNT; ++i) {
-        // generates a sample vector that's biased towards the preferred alignment
-        // direction (importance sampling).
+    for (uint i = 0u; i < SAMPLE_COUNT; i++) {
         vec2 Xi = hammersley(i, SAMPLE_COUNT);
         vec3 h = importanceSampleGgx(Xi, n, roughness);
         vec3 l = normalize(2.0 * dot(v, h) * h - v);
 
-        float NoL = max(dot(n, l), 0.0);
+        float NoL = max(dot(n, l), 0.);
 
-        if (NoL > 0.0) {
-            float NoH = max(dot(n, h), 0.0);
-            float HoV = max(dot(h, v), 0.0);
+        if (NoL > 0.) {
+            float NoH = max(dot(n, h), 0.);
+            float HoV = max(dot(h, v), 0.0001);
 
             float D = distributionGgx(NoH, roughness);
+            float pdf = D * NoH / (4. * HoV);
 
-            float pdf = D * NoH / ((4.0 * HoV) + 0.0001);
+            // Use pre - filtered importance sampling ( i . e use lower mipmap
+            // level for fetching sample with low probability in order
+            // to reduce the variance ) .
+            // ( Reference : GPU Gem3 )
+            // https://developer.nvidia.com/gpugems/gpugems3/part-iii-rendering/chapter-20-gpu-based-importance-sampling
+            //
+            // Since we pre - integrate the result for normal direction ,
+            // N == V and then NdotH == LdotH . This is why the BRDF pdf
+            // can be simplifed from :
+            // pdf = D _G GX _ Di vi de _ Pi ( NdotH , roughness ) * NdotH /(4* LdotH ) ;
+            // to
+            // pdf = D _G GX _ Di vi de _ Pi ( NdotH , roughness ) / 4;
+            //
+            // The mipmap level is clamped to something lower than 8 x8
+            // in order to avoid cubemap filtering issues
+            //
+            // - OmegaS : Solid angle associated to a sample
+            // - OmegaP : Solid angle associated to a pixel of the cubemap */
 
             // clang-format off
             const float resolution = float({{ ibl.cubemap_size }});
             const float roughness_levels = float({{ ibl.prefilter_map_roughnes_levels - 1 }});
             // clang-format on
 
-            float saTexel = 4.0 * PI / (roughness_levels * resolution * resolution);
-            float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 0.0001);
-            // sample from the environment's mip level based on roughness/pdf
-            float mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / saTexel);
+            float omegaP = 4. * PI / (roughness_levels * resolution * resolution);
+            float omegaS = 1. / (float(SAMPLE_COUNT) * pdf);
+            float mipLevel = clamp(0.5 * log2(omegaS / omegaP), 0., roughness_levels);
 
             prefilteredColor += textureLod(cubemap, l, mipLevel).rgb * NoL;
             totalWeight += NoL;
@@ -62,5 +77,5 @@ void main()
     }
 
     prefilteredColor = prefilteredColor / totalWeight;
-    imageStore(prefilterMap, ivec3(globalId), vec4(prefilteredColor, 0.0));
+    imageStore(prefilterMap, ivec3(globalId), vec4(prefilteredColor, 0.));
 }
