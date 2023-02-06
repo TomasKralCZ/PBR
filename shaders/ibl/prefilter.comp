@@ -1,11 +1,13 @@
 #version 460 core
+// clang-format off
 
-// {% include "consts.glsl" %}
-// {% include "brdf.glsl" %}
-// {% include "ibl/cubemap_to_xyz.glsl" %}
-// {% include "ibl/brdf_sampling.glsl" %}
+{% include "consts.glsl" %}
+{% include "brdf.glsl" %}
+{% include "ibl/cubemap_to_xyz.glsl" %}
+{% include "ibl/brdf_sampling.glsl" %}
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = {{ ibl.local_size_xy }}, local_size_y = {{ ibl.local_size_xy }}
+    , local_size_z = {{ ibl.local_size_z }}) in;
 
 layout(binding = 0) uniform samplerCube cubemap;
 layout(rgba32f, binding = 1) uniform writeonly imageCube prefilterMap;

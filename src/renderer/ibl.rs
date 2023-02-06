@@ -185,10 +185,8 @@ impl Ibl {
                     );
 
                     // TODO: make sure this matches the atual mip sizes...
-                    let mip_width = (PREFILTER_MAP_SIZE as f32 * 0.5f32.powi(lod)) as i32;
-                    let mip_height = (PREFILTER_MAP_SIZE as f32 * 0.5f32.powi(lod)) as i32;
-
-                    gl::DispatchCompute(mip_width as _, mip_height as _, CUBEMAP_FACES);
+                    let mip_size = (PREFILTER_MAP_SIZE as f32 * 0.5f32.powi(lod)) as i32;
+                    Self::dispatch_compute_divide(mip_size as _, mip_size as _, CUBEMAP_FACES);
                     gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
                 }
             });

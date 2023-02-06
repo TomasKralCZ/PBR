@@ -16,17 +16,17 @@ void main()
     vec3 normal = directionFromCubemapUv(globalId, imageSize(irradianceMap).x);
 
     // Create basis vectors
-    vec3 up = vec3(0.0, 1.0, 0.0);
+    vec3 up = vec3(0., 1.0, 0.);
     vec3 right = normalize(cross(up, normal));
     up = normalize(cross(normal, right));
 
-    vec3 irradiance = vec3(0.0);
+    vec3 irradiance = vec3(0.);
 
     float sampleDelta = 0.025;
-    float sampleCount = 0.0;
+    int sampleCount = 0;
 
-    for (float phi = 0.0; phi < 2.0 * PI; phi += sampleDelta) {
-        for (float theta = 0.0; theta < 0.5 * PI; theta += sampleDelta) {
+    for (float phi = 0.; phi < 2. * PI; phi += sampleDelta) {
+        for (float theta = 0.; theta < 0.5 * PI; theta += sampleDelta) {
             // Spherical coordinates to cartesian
             vec3 baseSampleDir = vec3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
             // Change of basis from canonical to the basis of the normal
@@ -39,6 +39,6 @@ void main()
         }
     }
 
-    vec4 color = vec4(PI * irradiance / float(sampleCount), 1.0);
+    vec4 color = vec4(PI * irradiance / float(sampleCount), 1.);
     imageStore(irradianceMap, ivec3(globalId), color);
 }
