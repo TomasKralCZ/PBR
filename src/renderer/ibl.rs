@@ -43,7 +43,7 @@ impl Ibl {
         cubemap: &GlTexture,
         brdf_type: BrdfType,
     ) -> Result<GlTexture> {
-        let tex = create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F);
+        let tex = create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F, 1);
         // TODO: shader permutations abstraction for compute shaders
         let shader = Shader::comp_with_path_defines(
             "shaders_stitched/raw_brdf_integration.comp",
@@ -85,7 +85,7 @@ impl Ibl {
 
     /// Computes the diffuse irradiance map from the cubemap
     fn compute_irradiance_map(cubemap_tex_id: u32) -> Result<GlTexture> {
-        let irradiance_tex = create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F);
+        let irradiance_tex = create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F, 1);
         let irradiance_shader = Shader::comp_with_path("shaders_stitched/irradiance.comp")?;
 
         gl_time_query("irradiance compute shader", || {
@@ -148,22 +148,9 @@ impl Ibl {
 
     /// Computes the LD part of the specular integral
     fn compute_prefilter_map(cubemap_tex_id: u32) -> Result<GlTexture> {
-        let prefilter_tex = GlTexture::new(gl::TEXTURE_CUBE_MAP);
-
-        unsafe {
-            let size = PREFILTER_MAP_SIZE;
-            let levels = IBL.cubemap_roughnes_levels;
-            gl::TextureStorage2D(prefilter_tex.id, levels, gl::RGBA32F, size, size);
-
-            let clamp = gl::CLAMP_TO_EDGE as i32;
-            gl::TextureParameteri(prefilter_tex.id, gl::TEXTURE_WRAP_S, clamp);
-            gl::TextureParameteri(prefilter_tex.id, gl::TEXTURE_WRAP_T, clamp);
-            gl::TextureParameteri(prefilter_tex.id, gl::TEXTURE_WRAP_R, clamp);
-
-            let filtering = gl::LINEAR_MIPMAP_LINEAR as i32;
-            gl::TextureParameteri(prefilter_tex.id, gl::TEXTURE_MIN_FILTER, filtering);
-            gl::TextureParameteri(prefilter_tex.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-        }
+        let size = PREFILTER_MAP_SIZE;
+        let mip_levels = IBL.cubemap_roughnes_levels;
+        let prefilter_tex = create_cubemap_texture(size, gl::RGBA32F, mip_levels);
 
         let prefilter_shader = Shader::comp_with_path("shaders_stitched/prefilter.comp")?;
         gl_time_query("split_sum prefiltering", || {
@@ -208,7 +195,7 @@ impl Ibl {
 pub fn load_cubemap_from_equi(path: &str) -> Result<GlTexture> {
     let equimap = load_hdr_image(path)?;
     let equi_tex = create_equi_texture(equimap);
-    let cubemap_tex = create_cubemap_texture(IBL.cubemap_size, gl::RGBA32F);
+    let cubemap_tex = create_cubemap_texture(IBL.cubemap_size, gl::RGBA32F, IBL.cubemap_roughnes_levels);
     let equi_to_cubemap_shader = Shader::comp_with_path("shaders_stitched/equi_to_cubemap.comp")?;
 
     equi_to_cubemap_shader.use_shader(|| unsafe {
@@ -232,11 +219,11 @@ pub fn load_cubemap_from_equi(path: &str) -> Result<GlTexture> {
     Ok(cubemap_tex)
 }
 
-fn create_cubemap_texture(size: i32, internal_typ: GLenum) -> GlTexture {
+fn create_cubemap_texture(size: i32, internal_typ: GLenum, mip_levels: i32) -> GlTexture {
     let tex = GlTexture::new(gl::TEXTURE_CUBE_MAP);
 
     unsafe {
-        gl::TextureStorage2D(tex.id, IBL.cubemap_roughnes_levels, internal_typ, size, size);
+        gl::TextureStorage2D(tex.id, mip_levels, internal_typ, size, size);
 
         let clamp = gl::CLAMP_TO_EDGE as i32;
         gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_S, clamp);
