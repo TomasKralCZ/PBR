@@ -74,6 +74,10 @@ impl Ibl {
         let prefilter_tex_id = Self::compute_prefilter_map(cubemap_tex_id)?;
         let dfg_lut_id = Self::dfg_integration()?;
 
+        irradiance_tex_id.add_label(cstr!("irradiance map"));
+        prefilter_tex_id.add_label(cstr!("prefilter map"));
+        dfg_lut_id.add_label(cstr!("DFG LUT"));
+
         let textures = IblTextures {
             irradiance_tex_id,
             prefilter_tex_id,
@@ -195,8 +199,11 @@ impl Ibl {
 pub fn load_cubemap_from_equi(path: &str) -> Result<GlTexture> {
     let equimap = load_hdr_image(path)?;
     let equi_tex = create_equi_texture(equimap);
-    let cubemap_tex = create_cubemap_texture(IBL.cubemap_size, gl::RGBA32F, IBL.cubemap_roughnes_levels);
+    let cubemap_tex =
+        create_cubemap_texture(IBL.cubemap_size, gl::RGBA32F, IBL.cubemap_roughnes_levels);
     let equi_to_cubemap_shader = Shader::comp_with_path("shaders_stitched/equi_to_cubemap.comp")?;
+
+    cubemap_tex.add_label(cstr!("environment map"));
 
     equi_to_cubemap_shader.use_shader(|| unsafe {
         gl::BindTextureUnit(0, equi_tex.id);
@@ -229,7 +236,11 @@ fn create_cubemap_texture(size: i32, internal_typ: GLenum, mip_levels: i32) -> G
         gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_S, clamp);
         gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_T, clamp);
         gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_R, clamp);
-        gl::TextureParameteri(tex.id, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR as i32);
+        gl::TextureParameteri(
+            tex.id,
+            gl::TEXTURE_MIN_FILTER,
+            gl::LINEAR_MIPMAP_LINEAR as i32,
+        );
         gl::TextureParameteri(tex.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
     }
 

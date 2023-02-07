@@ -1,3 +1,5 @@
+use std::ffi::CStr;
+
 use gl::types::GLenum;
 
 use super::TextureId;
@@ -15,6 +17,17 @@ impl GlTexture {
         }
 
         Self { id }
+    }
+
+    pub fn add_label(&self, label: &CStr) {
+        unsafe {
+            gl::ObjectLabel(
+                gl::TEXTURE,
+                self.id,
+                label.to_bytes().len() as _,
+                label.as_ptr(),
+            );
+        }
     }
 }
 
