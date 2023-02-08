@@ -17,6 +17,7 @@ image = { version = "0.24.2", features = ["png", "jpeg", "hdr"] }
 sdl2 = { version = "0.35", features = ["bundled", "static-link"] }
 egui = "0.16"
 egui_sdl2_gl = "0.16.0"
+spin_sleep = "1.1.1"
 
 serde = { version = "1.0", features = ["derive"] }
 cstr = "0.2.11"

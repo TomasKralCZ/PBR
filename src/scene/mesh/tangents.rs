@@ -39,7 +39,6 @@ impl Primitive {
             let mut t = (e1 * dy2 - e2 * dy1) * r;
             let mut b = (e2 * dx1 - e1 * dx2) * r;
 
-            // TODO: tangents nan and infinite... maybe degenerate triangles ?
             if !t.is_finite() {
                 t = Vec3::new(0., 0., 1.);
             }

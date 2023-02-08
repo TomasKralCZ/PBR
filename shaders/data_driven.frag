@@ -50,6 +50,7 @@ vec3 calculateDirectLighting(ShadingParams sp)
 #endif
 
 #ifdef UTIA_BRDF
+        // FIXME(high): I'm pretty sure some of the UTIA values are negative
         vec3 brdf = lookup_brdf_utia(lightDir, sp.viewDir, sp.tb.normal, sp.tb.tangent, sp.tb.bitangent);
 #endif
 

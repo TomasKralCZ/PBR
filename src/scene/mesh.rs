@@ -220,6 +220,7 @@ impl Primitive {
                 .map(|c| c.normal_texture.is_some())
                 .unwrap_or(false)
         {
+            println!("Warning: calculating tangents in a simple way");
             Self::calculate_tangents(vertex_buf, index_buf);
         }
     }

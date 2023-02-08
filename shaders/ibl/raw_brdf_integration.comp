@@ -61,7 +61,6 @@ void main()
         float normalizer = 16.;
 #endif
 
-// FIXME(high): analytic light source works, IBL does not
 #ifdef UTIA_BRDF
         vec3 brdf = lookup_brdf_utia(sampleDir, normalize(normal - vec3(0.1)), normal, right, up);
         float normalizer = 1.;
@@ -70,8 +69,6 @@ void main()
         irradiance += brdf * radiance * normalizer;
     }
 
-    // FIXME(high): check if any BRDF values are negative, that could screw up the integration
-    // FIXME(high): I'm pretty sure some of the UTIA values are negative
     vec4 color = vec4(irradiance / float(SAMPLE_COUNT), 1.0);
     imageStore(rawBrdfMap, ivec3(globalId), color);
 }

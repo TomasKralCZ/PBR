@@ -95,7 +95,8 @@ extern "system" fn gl_debug_callback(
         _ => unreachable!("Unknown severity in glDebugCallback: '{}'", severity),
     }
 
-    // TODO: check if the message is guaranteed to be ASCII
+    // Messages are guaranteed to be null-terminated
+    // https://www.khronos.org/opengl/wiki/Debug_Output#Message_Components
     let msg = unsafe { CStr::from_ptr(msg) };
     println!("OpenGL debug message: '{}'", msg.to_string_lossy())
 }

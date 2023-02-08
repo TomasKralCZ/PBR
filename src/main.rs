@@ -1,8 +1,6 @@
 //! PBR experiments
 //!
 //! `main` function is the entry-point
-use std::{thread, time::Duration};
-
 use app_settings::AppSettings;
 use camera::{Camera, CameraTyp, Flycam, Orbitalcam};
 use eyre::Result;
@@ -12,6 +10,7 @@ use renderer::{RenderCtx, Renderer};
 use resources::Resources;
 use sdl2::{keyboard::Scancode, EventPump};
 
+use spin_sleep::LoopHelper;
 use util::RcMut;
 use window::AppWindow;
 
@@ -67,7 +66,11 @@ fn main() -> Result<()> {
 
     let mut orbitalcam = Orbitalcam::new(2., 0.05, window.width, window.height);
 
+    let mut loop_helper = LoopHelper::builder().build_with_target_rate(60.0);
+
     'render_loop: loop {
+        loop_helper.loop_start();
+
         window.begin_frame();
 
         let active_cam: &mut dyn Camera = match app_settings.get().camera_typ {
@@ -94,8 +97,7 @@ fn main() -> Result<()> {
             break 'render_loop;
         }
 
-        // TODO: precise sleeping
-        thread::sleep(Duration::from_millis(10));
+        loop_helper.loop_sleep();
     }
 
     Ok(())
