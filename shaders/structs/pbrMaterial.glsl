@@ -1,5 +1,7 @@
 
-layout(std140, binding = 1) uniform PbrMaterial
+// clang-format off
+layout(std140, binding = {{ consts.buffer_bindings.pbr_material }}) uniform PbrMaterial
+// clang-format on
 {
     uniform vec4 baseColorFactor;
     uniform vec4 emissiveFactor;

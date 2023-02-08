@@ -25,7 +25,7 @@ fn generate_shaders() -> Result<()> {
 
 fn populate_context(context: &mut Context) {
     use shader_constants as sc;
-    context.insert("ibl", &sc::IBL);
+    context.insert("consts", &sc::CONSTS);
 }
 
 const NOTICE: &'static str =

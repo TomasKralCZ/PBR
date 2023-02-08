@@ -1,6 +1,7 @@
 use glam::Vec4;
+use shader_constants::CONSTS;
 
-use crate::ogl::{self, uniform_buffer::UniformBufferElement};
+use crate::ogl::uniform_buffer::UniformBufferElement;
 
 /// Uniform buffer element that stores the lighing data
 #[derive(bytemuck::NoUninit, Copy, Clone, PartialEq, Debug)]
@@ -42,5 +43,5 @@ impl Lighting {
 }
 
 impl UniformBufferElement for Lighting {
-    const BINDING: u32 = ogl::LIGHTNING_BINDING;
+    const BINDING: u32 = CONSTS.buffer_bindings.lighting;
 }

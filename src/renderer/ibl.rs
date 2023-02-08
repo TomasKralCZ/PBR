@@ -13,7 +13,7 @@ use crate::ogl::ssbo::Ssbo;
 use crate::ogl::texture::GlTexture;
 use crate::ogl::{gl_time_query, TextureId};
 
-use shader_constants::IBL;
+use shader_constants::CONSTS;
 
 const CUBEMAP_FACES: u32 = 6;
 const IRRADIANCE_MAP_SIZE: i32 = 64;
@@ -48,9 +48,9 @@ impl IblEnv {
         let equimap = load_hdr_image(path)?;
         let equi_tex = Self::create_equi_texture(equimap);
         let cubemap_tex = Self::create_cubemap_texture(
-            IBL.cubemap_size,
+            CONSTS.ibl.cubemap_size,
             gl::RGBA32F,
-            IBL.cubemap_roughnes_levels,
+            CONSTS.ibl.cubemap_roughnes_levels,
         );
         let equi_to_cubemap_shader =
             Shader::comp_with_path("shaders_stitched/equi_to_cubemap.comp")?;
@@ -71,8 +71,8 @@ impl IblEnv {
                 );
 
                 Self::dispatch_compute_divide(
-                    IBL.cubemap_size as _,
-                    IBL.cubemap_size as _,
+                    CONSTS.ibl.cubemap_size as _,
+                    CONSTS.ibl.cubemap_size as _,
                     CUBEMAP_FACES,
                 );
                 gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
@@ -149,7 +149,7 @@ impl IblEnv {
     /// Computes the LD part of the specular integral
     fn compute_prefilter_map(cubemap_tex_id: TextureId) -> Result<GlTexture> {
         let size = PREFILTER_MAP_SIZE;
-        let mip_levels = IBL.cubemap_roughnes_levels;
+        let mip_levels = CONSTS.ibl.cubemap_roughnes_levels;
         let prefilter_tex = Self::create_cubemap_texture(size, gl::RGBA32F, mip_levels);
 
         let prefilter_shader = Shader::comp_with_path("shaders_stitched/prefilter.comp")?;
@@ -157,8 +157,8 @@ impl IblEnv {
             prefilter_shader.use_shader(|| unsafe {
                 gl::BindTextureUnit(0, cubemap_tex_id);
 
-                for lod in 0..IBL.cubemap_roughnes_levels {
-                    let roughness = lod as f32 / (IBL.cubemap_roughnes_levels as f32 - 1.);
+                for lod in 0..CONSTS.ibl.cubemap_roughnes_levels {
+                    let roughness = lod as f32 / (CONSTS.ibl.cubemap_roughnes_levels as f32 - 1.);
                     prefilter_shader.set_f32(roughness, cstr!("linearRoughness"));
 
                     gl::BindImageTexture(
@@ -184,9 +184,9 @@ impl IblEnv {
 
     unsafe fn dispatch_compute_divide(x: u32, y: u32, z: u32) {
         gl::DispatchCompute(
-            x / IBL.local_size_xy,
-            y / IBL.local_size_xy,
-            z / IBL.local_size_z,
+            x / CONSTS.ibl.local_size_xy,
+            y / CONSTS.ibl.local_size_xy,
+            z / CONSTS.ibl.local_size_z,
         );
     }
 
@@ -261,8 +261,8 @@ pub fn dfg_integration() -> Result<GlTexture> {
             gl::BindImageTexture(0, brdf_lut.id, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::RG32F);
 
             gl::DispatchCompute(
-                BRDF_LUT_SIZE as u32 / IBL.local_size_xy,
-                BRDF_LUT_SIZE as u32 / IBL.local_size_xy,
+                BRDF_LUT_SIZE as u32 / CONSTS.ibl.local_size_xy,
+                BRDF_LUT_SIZE as u32 / CONSTS.ibl.local_size_xy,
                 1,
             );
             gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);

@@ -1,6 +1,5 @@
 use gl::types::GLenum;
-
-use crate::ogl;
+use shader_constants::CONSTS;
 
 #[repr(C)]
 #[derive(Default, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -14,10 +13,10 @@ pub struct Vertex {
 impl Vertex {
     pub const ATTRIB_SIZES: [i32; 4] = [3, 3, 2, 4];
     pub const ATTRIB_INDICES: [u32; 4] = [
-        ogl::POSITION_INDEX,
-        ogl::NORMALS_INDEX,
-        ogl::TEXCOORDS_INDEX,
-        ogl::TANGENT_INDEX,
+        CONSTS.vertex_attrib_indices.position,
+        CONSTS.vertex_attrib_indices.normals,
+        CONSTS.vertex_attrib_indices.texcoords,
+        CONSTS.vertex_attrib_indices.tangent,
     ];
 
     pub const ATTRIB_TYPES: [GLenum; 4] = [gl::FLOAT; 4];

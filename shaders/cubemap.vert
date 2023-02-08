@@ -1,7 +1,9 @@
 #version 460 core
 layout(location = 0) in vec3 aPos;
 
-layout(std140, binding = 0) uniform Transforms
+// clang-format off
+layout(std140, binding = {{ consts.buffer_bindings.transforms }}) uniform Transforms
+// clang-format on
 {
     mat4 projection;
     mat4 view;

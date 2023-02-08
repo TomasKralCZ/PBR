@@ -6,8 +6,8 @@
 {% include "ibl/cubemap_to_xyz.glsl" %}
 {% include "ibl/brdf_sampling.glsl" %}
 
-layout(local_size_x = {{ ibl.local_size_xy }}, local_size_y = {{ ibl.local_size_xy }}
-    , local_size_z = {{ ibl.local_size_z }}) in;
+layout(local_size_x = {{ consts.ibl.local_size_xy }}, local_size_y = {{ consts.ibl.local_size_xy }}
+    , local_size_z = {{ consts.ibl.local_size_z }}) in;
 // clang-format on
 
 layout(binding = 0) uniform samplerCube cubemap;
@@ -63,8 +63,8 @@ void main()
             // - OmegaP : Solid angle associated to a pixel of the cubemap */
 
             // clang-format off
-            const float resolution = float({{ ibl.cubemap_size }});
-            const float roughness_levels = float({{ ibl.cubemap_roughnes_levels - 1 }});
+            const float resolution = float({{ consts.ibl.cubemap_size }});
+            const float roughness_levels = float({{ consts.ibl.cubemap_roughnes_levels - 1 }});
             // clang-format on
 
             float omegaP = 4. * PI / (roughness_levels * resolution * resolution);

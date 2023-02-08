@@ -180,7 +180,7 @@ vec3 calculateIBL(ShadingParams sp)
     vec3 reflectDir = reflect(-sp.viewDir, sp.tb.normal);
 #endif
     // clang-format off
-    const float MAX_REFLECTION_LOD = float({{ ibl.cubemap_roughnes_levels - 1 }});
+    const float MAX_REFLECTION_LOD = float({{ consts.ibl.cubemap_roughnes_levels - 1 }});
     // clang-format on
     vec3 prefilteredLight = textureLod(prefilterMap, reflectDir, sp.roughness * MAX_REFLECTION_LOD).rgb;
     vec2 dfg = texture(brdfLut, vec2(sp.NoV, sp.roughness)).rg;

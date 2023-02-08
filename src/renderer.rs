@@ -4,11 +4,13 @@ use cstr::cstr;
 use eyre::Result;
 use glam::{Mat4, Vec3};
 
+use shader_constants::CONSTS;
+
 use crate::{
     app_settings::{AppSettings, MaterialSrc},
     brdf_raw::{BrdfRaw, BrdfType},
     camera::Camera,
-    ogl::{self, texture::GlTexture, uniform_buffer::UniformBuffer, vao::Vao},
+    ogl::{texture::GlTexture, uniform_buffer::UniformBuffer, vao::Vao},
     resources::Resources,
     scene::{Mesh, Node, Primitive},
 };
@@ -153,7 +155,10 @@ impl Renderer {
 
         brdf.ssbo.bind();
         unsafe {
-            gl::BindTextureUnit(ogl::RAW_BRDF_PORT, brdf.ibl_texture.as_ref().unwrap().id);
+            gl::BindTextureUnit(
+                CONSTS.texture_ports.raw_brdf,
+                brdf.ibl_texture.as_ref().unwrap().id,
+            );
         }
 
         Ok(())
@@ -272,28 +277,26 @@ impl Renderer {
             }
         };
 
-        bind_texture_unit(&primitive.pbr_material.base_color_texture, ogl::ALBEDO_PORT);
-        bind_texture_unit(&primitive.pbr_material.mr_texture, ogl::MR_PORT);
-        bind_texture_unit(&primitive.pbr_material.normal_texture, ogl::NORMAL_PORT);
-        bind_texture_unit(
-            &primitive.pbr_material.occlusion_texture,
-            ogl::OCCLUSION_PORT,
-        );
-        bind_texture_unit(&primitive.pbr_material.emissive_texture, ogl::EMISSIVE_PORT);
+        let tp = CONSTS.texture_ports;
+        bind_texture_unit(&primitive.pbr_material.base_color_texture, tp.albedo);
+        bind_texture_unit(&primitive.pbr_material.mr_texture, tp.mr);
+        bind_texture_unit(&primitive.pbr_material.normal_texture, tp.normal);
+        bind_texture_unit(&primitive.pbr_material.occlusion_texture, tp.occlusion);
+        bind_texture_unit(&primitive.pbr_material.emissive_texture, tp.emissive);
 
         if let Some(cc) = &primitive.clearcoat {
-            bind_texture_unit(&cc.intensity_texture, ogl::CLEARCOAT_INTENSITY_PORT);
-            bind_texture_unit(&cc.roughness_texture, ogl::CLEARCOAT_ROUGHNESS_PORT);
-            bind_texture_unit(&cc.normal_texture, ogl::CLEARCOAT_NORMAL_PORT);
+            bind_texture_unit(&cc.intensity_texture, tp.clearcoat_intensity);
+            bind_texture_unit(&cc.roughness_texture, tp.clearcoat_roughness);
+            bind_texture_unit(&cc.normal_texture, tp.clearcoat_normal);
         }
 
         let selected_envmap = rctx.app_settings.selected_envmap;
         let iblenv = rctx.res.envmaps[selected_envmap].load()?;
 
         unsafe {
-            gl::BindTextureUnit(ogl::IRRADIANCE_PORT, iblenv.irradiance_tex.id);
-            gl::BindTextureUnit(ogl::PREFILTER_PORT, iblenv.prefilter_tex.id);
-            gl::BindTextureUnit(ogl::BRDF_PORT, self.dfg_lut.id);
+            gl::BindTextureUnit(tp.irradiance, iblenv.irradiance_tex.id);
+            gl::BindTextureUnit(tp.prefilter, iblenv.prefilter_tex.id);
+            gl::BindTextureUnit(tp.brdf, self.dfg_lut.id);
         }
 
         Ok(())

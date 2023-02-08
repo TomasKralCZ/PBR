@@ -1,6 +1,7 @@
 use glam::Mat4;
+use shader_constants::CONSTS;
 
-use crate::ogl::{self, uniform_buffer::UniformBufferElement};
+use crate::ogl::uniform_buffer::UniformBufferElement;
 
 /// Uniform buffer element that stores the transformation matrices
 #[derive(bytemuck::NoUninit, Copy, Clone, PartialEq, Debug)]
@@ -22,5 +23,5 @@ impl Transforms {
 }
 
 impl UniformBufferElement for Transforms {
-    const BINDING: u32 = ogl::TRANSFORM_BINDING;
+    const BINDING: u32 = CONSTS.buffer_bindings.transforms;
 }

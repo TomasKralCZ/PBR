@@ -3,7 +3,7 @@ struct NormalBasis {
     vec3 normal;
     vec3 tangent;
     vec3 bitangent;
-};  
+};
 
 #if defined(NORMAL_MAP) || defined(CLEARCOAT_NORMAL_MAP)
 NormalBasis getNormalFromMap(sampler2D tex, float scaleNormal, vec3 viewDir)

@@ -1,8 +1,10 @@
 
+// clang-format off
 #ifdef MERL_BRDF
-layout(std430, binding = 10) buffer merlBrdfData { double merlBrdfTable[]; };
+layout(std430, binding = {{ consts.buffer_bindings.brdf_merl }}) buffer merlBrdfData { double merlBrdfTable[]; };
 #endif
 
 #ifdef UTIA_BRDF
-layout(std430, binding = 11) buffer utiaBrdfData { double utiaBrdfTable[]; };
+layout(std430, binding = {{ consts.buffer_bindings.brdf_utia }}) buffer utiaBrdfData { double utiaBrdfTable[]; };
 #endif
+// clang-format on

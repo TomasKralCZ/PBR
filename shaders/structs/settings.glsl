@@ -1,5 +1,6 @@
-
-layout(std140, binding = 3) uniform Settings
+// clang-format off
+layout(std140, binding = {{ consts.buffer_bindings.settings }}) uniform Settings
+// clang-format on
 {
     uniform bool clearcoatEnabled;
     uniform bool directLightEnabled;

@@ -1,4 +1,6 @@
-use crate::ogl::{self, uniform_buffer::UniformBufferElement};
+use shader_constants::CONSTS;
+
+use crate::ogl::uniform_buffer::UniformBufferElement;
 
 /// Uniform buffer element that stores the material settings
 #[derive(Default, bytemuck::NoUninit, Copy, Clone, PartialEq, Debug)]
@@ -38,5 +40,5 @@ impl PbrMaterial {
 }
 
 impl UniformBufferElement for PbrMaterial {
-    const BINDING: u32 = ogl::PBR_MATERIAL_BINDING;
+    const BINDING: u32 = CONSTS.buffer_bindings.pbr_material;
 }

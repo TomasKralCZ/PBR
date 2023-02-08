@@ -17,36 +17,6 @@ pub mod uniform_buffer;
 /// Abstraction for working with VAOs
 pub mod vao;
 
-// Indices of the vertex attributes
-pub const POSITION_INDEX: u32 = 0;
-pub const NORMALS_INDEX: u32 = 1;
-pub const TEXCOORDS_INDEX: u32 = 2;
-pub const TANGENT_INDEX: u32 = 3;
-
-// Texture binding ports (units)
-pub const ALBEDO_PORT: u32 = 0;
-pub const MR_PORT: u32 = 1;
-pub const NORMAL_PORT: u32 = 2;
-pub const OCCLUSION_PORT: u32 = 3;
-pub const EMISSIVE_PORT: u32 = 4;
-
-pub const CLEARCOAT_INTENSITY_PORT: u32 = 5;
-pub const CLEARCOAT_ROUGHNESS_PORT: u32 = 6;
-pub const CLEARCOAT_NORMAL_PORT: u32 = 7;
-
-pub const IRRADIANCE_PORT: u32 = 8;
-pub const PREFILTER_PORT: u32 = 9;
-pub const BRDF_PORT: u32 = 10;
-pub const RAW_BRDF_PORT: u32 = 11;
-
-// Buffer bindings
-pub const TRANSFORM_BINDING: u32 = 0;
-pub const PBR_MATERIAL_BINDING: u32 = 1;
-pub const LIGHTNING_BINDING: u32 = 2;
-pub const SETTINGS_BINDING: u32 = 3;
-pub const BRDF_MERL_BINDING: u32 = 10;
-pub const BRDF_UTIA_BINDING: u32 = 11;
-
 pub type TextureId = u32;
 pub type ProgramId = u32;
 pub type ShaderId = u32;

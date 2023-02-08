@@ -1,7 +1,6 @@
-use crate::{
-    app_settings::DiffuseType,
-    ogl::{self, uniform_buffer::UniformBufferElement},
-};
+use shader_constants::CONSTS;
+
+use crate::{app_settings::DiffuseType, ogl::uniform_buffer::UniformBufferElement};
 
 #[derive(bytemuck::NoUninit, Copy, Clone, PartialEq)]
 #[repr(C)]
@@ -50,5 +49,5 @@ impl PbrSettings {
 }
 
 impl UniformBufferElement for PbrSettings {
-    const BINDING: u32 = ogl::SETTINGS_BINDING;
+    const BINDING: u32 = CONSTS.buffer_bindings.settings;
 }

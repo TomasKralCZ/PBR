@@ -15,8 +15,8 @@
 {% include "measured_brdf/brdf_utia.glsl" %}
 #endif
 
-layout(local_size_x = {{ ibl.local_size_xy }}, local_size_y = {{ ibl.local_size_xy }}
-    ,local_size_z = {{ ibl.local_size_z }}) in;
+layout(local_size_x = {{ consts.ibl.local_size_xy }}, local_size_y = {{ consts.ibl.local_size_xy }}
+    ,local_size_z = {{ consts.ibl.local_size_z }}) in;
 // clang-format on
 
 layout(binding = 0) uniform samplerCube cubemap;

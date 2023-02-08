@@ -1,11 +1,13 @@
 #version 460 core
 
-layout(location = 0) in vec3 inPos;
-layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec2 inTexcoords;
-layout(location = 3) in vec4 inTangent;
+// clang-format off
+layout(location = {{ consts.vertex_attrib_indices.position }}) in vec3 inPos;
+layout(location = {{ consts.vertex_attrib_indices.normals }}) in vec3 inNormal;
+layout(location = {{ consts.vertex_attrib_indices.texcoords }}) in vec2 inTexcoords;
+layout(location = {{ consts.vertex_attrib_indices.tangent }}) in vec4 inTangent;
 
-layout(std140, binding = 0) uniform Transforms
+layout(std140, binding = {{ consts.buffer_bindings.transforms }}) uniform Transforms
+// clang-format on
 {
     mat4 projection;
     mat4 view;

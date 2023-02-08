@@ -1,6 +1,8 @@
 use std::mem::size_of;
 
-use crate::ogl::{self, gl_buffer::GlBuffer, vao::Vao};
+use shader_constants::CONSTS;
+
+use crate::ogl::{gl_buffer::GlBuffer, vao::Vao};
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -43,7 +45,7 @@ pub fn init_cube() -> Vao {
     vao.attach_vertex_buf(
         &vertex_buf,
         3,
-        ogl::POSITION_INDEX,
+        CONSTS.vertex_attrib_indices.position,
         gl::FLOAT,
         size_of::<Vertex>(),
     );

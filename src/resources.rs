@@ -1,12 +1,13 @@
 use eyre::{eyre, Result};
+use shader_constants::CONSTS;
 
-use crate::{brdf_raw::BrdfRaw, ogl, renderer::ibl::IblEnv, scene::Scene, util::timed_scope};
+use crate::{brdf_raw::BrdfRaw, renderer::ibl::IblEnv, scene::Scene, util::timed_scope};
 
 pub struct Resources {
     pub scenes: Vec<LazyResource<Scene>>,
     pub envmaps: Vec<LazyResource<IblEnv>>,
-    pub merl_brdfs: Vec<LazyResource<BrdfRaw<{ ogl::BRDF_MERL_BINDING }>>>,
-    pub utia_brdfs: Vec<LazyResource<BrdfRaw<{ ogl::BRDF_UTIA_BINDING }>>>,
+    pub merl_brdfs: Vec<LazyResource<BrdfRaw<{ CONSTS.buffer_bindings.brdf_merl }>>>,
+    pub utia_brdfs: Vec<LazyResource<BrdfRaw<{ CONSTS.buffer_bindings.brdf_utia }>>>,
 }
 
 impl Resources {
