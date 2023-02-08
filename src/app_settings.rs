@@ -7,6 +7,8 @@ use crate::{
 pub struct AppSettings {
     // Index into resources scene vector
     pub selected_scene: usize,
+    // Index into resources envmaps vector
+    pub selected_envmap: usize,
 
     pub camera_typ: CameraTyp,
 
@@ -27,6 +29,7 @@ impl AppSettings {
     pub fn new(window: &AppWindow) -> Self {
         Self {
             selected_scene: 0,
+            selected_envmap: 0,
             viewport_dim: ViewportDim::new(window),
             material_src: MaterialSrc::Gltf,
             camera_typ: CameraTyp::Orbital,

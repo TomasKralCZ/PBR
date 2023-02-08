@@ -9,13 +9,13 @@ use crate::{
 };
 
 /// All state that needs to be rendered in the GUI
-pub struct GuiCtx {
+pub struct Gui {
     pub resources: RcMut<Resources>,
     pub app_settings: RcMut<AppSettings>,
 }
 
 /// Implements methods for displaying the widgets.
-impl GuiCtx {
+impl Gui {
     /// Creates the GUI.
     ///
     /// Immediate mode GUI - is called every frame.
@@ -223,6 +223,22 @@ impl GuiCtx {
                     for (i, scene) in resources.scenes.iter().enumerate() {
                         if ui.button(scene.name()).clicked() {
                             app_settings.selected_scene = i;
+                        }
+                    }
+                });
+        });
+
+        ui.group(|ui| {
+            ui.add(egui::Label::new(RichText::new("Environment maps").heading().strong()));
+            ui.separator();
+
+            egui::ScrollArea::vertical()
+                .max_height(height)
+                .id_source("envmaps_scroll")
+                .show(ui, |ui| {
+                    for (i, envmap) in resources.envmaps.iter().enumerate() {
+                        if ui.button(envmap.name()).clicked() {
+                            app_settings.selected_envmap = i;
                         }
                     }
                 });

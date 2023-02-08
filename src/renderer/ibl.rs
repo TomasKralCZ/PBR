@@ -19,23 +19,63 @@ const CUBEMAP_FACES: u32 = 6;
 const IRRADIANCE_MAP_SIZE: i32 = 64;
 const PREFILTER_MAP_SIZE: i32 = 256;
 const MEASURED_BRDF_MAP_SIZE: u32 = 128;
-const BRDF_LUT_SIZE: i32 = 256;
+const BRDF_LUT_SIZE: i32 = 512;
 
-pub struct Ibl {
-    pub textures: IblTextures,
+pub struct IblEnv {
+    pub cubemap_tex: GlTexture,
+    pub irradiance_tex: GlTexture,
+    pub prefilter_tex: GlTexture,
 }
 
-pub struct IblTextures {
-    pub irradiance_tex_id: GlTexture,
-    pub prefilter_tex_id: GlTexture,
-    pub dfg_lut_id: GlTexture,
-}
+impl IblEnv {
+    pub fn from_equimap_path(path: &str) -> Result<Self> {
+        let cubemap_tex = Self::load_cubemap_from_equi(path)?;
+        let irradiance_tex = Self::compute_irradiance_map(cubemap_tex.id)?;
+        let prefilter_tex = Self::compute_prefilter_map(cubemap_tex.id)?;
 
-impl Ibl {
-    pub fn from_cubemap(cubemap_tex_id: &GlTexture) -> Result<Self> {
-        let textures = Self::compute_ibl(cubemap_tex_id.id)?;
+        irradiance_tex.add_label(cstr!("irradiance map"));
+        prefilter_tex.add_label(cstr!("prefilter map"));
 
-        Ok(Self { textures })
+        Ok(Self {
+            cubemap_tex,
+            irradiance_tex,
+            prefilter_tex,
+        })
+    }
+
+    /// Converts an HDR equirectangular map to a cubemap
+    fn load_cubemap_from_equi(path: &str) -> Result<GlTexture> {
+        let equimap = load_hdr_image(path)?;
+        let equi_tex = Self::create_equi_texture(equimap);
+        let cubemap_tex = Self::create_cubemap_texture(
+            IBL.cubemap_size,
+            gl::RGBA32F,
+            IBL.cubemap_roughnes_levels,
+        );
+        let equi_to_cubemap_shader =
+            Shader::comp_with_path("shaders_stitched/equi_to_cubemap.comp")?;
+
+        cubemap_tex.add_label(cstr!("environment map"));
+
+        equi_to_cubemap_shader.use_shader(|| unsafe {
+            gl::BindTextureUnit(0, equi_tex.id);
+            gl::BindImageTexture(
+                1,
+                cubemap_tex.id,
+                0,
+                gl::TRUE,
+                0,
+                gl::WRITE_ONLY,
+                gl::RGBA32F,
+            );
+
+            gl::DispatchCompute(IBL.cubemap_size as _, IBL.cubemap_size as _, CUBEMAP_FACES);
+            gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+
+            gl::GenerateTextureMipmap(cubemap_tex.id);
+        });
+
+        Ok(cubemap_tex)
     }
 
     pub fn compute_ibl_brdf<const BINDING: u32>(
@@ -43,7 +83,7 @@ impl Ibl {
         cubemap: &GlTexture,
         brdf_type: BrdfType,
     ) -> Result<GlTexture> {
-        let tex = create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F, 1);
+        let tex = Self::create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F, 1);
         // TODO: shader permutations abstraction for compute shaders
         let shader = Shader::comp_with_path_defines(
             "shaders_stitched/raw_brdf_integration.comp",
@@ -69,27 +109,9 @@ impl Ibl {
         Ok(tex)
     }
 
-    fn compute_ibl(cubemap_tex_id: TextureId) -> Result<IblTextures> {
-        let irradiance_tex_id = Self::compute_irradiance_map(cubemap_tex_id)?;
-        let prefilter_tex_id = Self::compute_prefilter_map(cubemap_tex_id)?;
-        let dfg_lut_id = Self::dfg_integration()?;
-
-        irradiance_tex_id.add_label(cstr!("irradiance map"));
-        prefilter_tex_id.add_label(cstr!("prefilter map"));
-        dfg_lut_id.add_label(cstr!("DFG LUT"));
-
-        let textures = IblTextures {
-            irradiance_tex_id,
-            prefilter_tex_id,
-            dfg_lut_id,
-        };
-
-        Ok(textures)
-    }
-
     /// Computes the diffuse irradiance map from the cubemap
-    fn compute_irradiance_map(cubemap_tex_id: u32) -> Result<GlTexture> {
-        let irradiance_tex = create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F, 1);
+    fn compute_irradiance_map(cubemap_tex_id: TextureId) -> Result<GlTexture> {
+        let irradiance_tex = Self::create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F, 1);
         let irradiance_shader = Shader::comp_with_path("shaders_stitched/irradiance.comp")?;
 
         gl_time_query("irradiance compute shader", || {
@@ -118,43 +140,11 @@ impl Ibl {
         Ok(irradiance_tex)
     }
 
-    /// Computes the BRDF part of the specular integral
-    fn dfg_integration() -> Result<GlTexture> {
-        let brdf_lut = GlTexture::new(gl::TEXTURE_2D);
-
-        unsafe {
-            gl::TextureStorage2D(brdf_lut.id, 1, gl::RG32F, BRDF_LUT_SIZE, BRDF_LUT_SIZE);
-
-            gl::TextureParameteri(brdf_lut.id, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
-            gl::TextureParameteri(brdf_lut.id, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
-            gl::TextureParameteri(brdf_lut.id, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-            gl::TextureParameteri(brdf_lut.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-        };
-
-        let dfg_integration_shader =
-            Shader::comp_with_path("shaders_stitched/dfg_integration.comp")?;
-
-        gl_time_query("split_sum dfg integration", || {
-            dfg_integration_shader.use_shader(|| unsafe {
-                gl::BindImageTexture(0, brdf_lut.id, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::RG32F);
-
-                gl::DispatchCompute(
-                    BRDF_LUT_SIZE as u32 / IBL.local_size_xy,
-                    BRDF_LUT_SIZE as u32 / IBL.local_size_xy,
-                    1,
-                );
-                gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
-            });
-        });
-
-        Ok(brdf_lut)
-    }
-
     /// Computes the LD part of the specular integral
-    fn compute_prefilter_map(cubemap_tex_id: u32) -> Result<GlTexture> {
+    fn compute_prefilter_map(cubemap_tex_id: TextureId) -> Result<GlTexture> {
         let size = PREFILTER_MAP_SIZE;
         let mip_levels = IBL.cubemap_roughnes_levels;
-        let prefilter_tex = create_cubemap_texture(size, gl::RGBA32F, mip_levels);
+        let prefilter_tex = Self::create_cubemap_texture(size, gl::RGBA32F, mip_levels);
 
         let prefilter_shader = Shader::comp_with_path("shaders_stitched/prefilter.comp")?;
         gl_time_query("split_sum prefiltering", || {
@@ -193,87 +183,87 @@ impl Ibl {
             z / IBL.local_size_z,
         );
     }
+
+    fn create_cubemap_texture(size: i32, internal_typ: GLenum, mip_levels: i32) -> GlTexture {
+        let tex = GlTexture::new(gl::TEXTURE_CUBE_MAP);
+
+        unsafe {
+            gl::TextureStorage2D(tex.id, mip_levels, internal_typ, size, size);
+
+            let clamp = gl::CLAMP_TO_EDGE as i32;
+            gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_S, clamp);
+            gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_T, clamp);
+            gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_R, clamp);
+            gl::TextureParameteri(
+                tex.id,
+                gl::TEXTURE_MIN_FILTER,
+                gl::LINEAR_MIPMAP_LINEAR as i32,
+            );
+            gl::TextureParameteri(tex.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+        }
+
+        tex
+    }
+
+    fn create_equi_texture(equimap: HdrImage) -> GlTexture {
+        let equi_tex = GlTexture::new(gl::TEXTURE_2D);
+
+        unsafe {
+            let w = equimap.width as i32;
+            let h = equimap.height as i32;
+
+            gl::TextureStorage2D(equi_tex.id, 1, gl::RGB32F, w, h);
+            gl::TextureSubImage2D(
+                equi_tex.id,
+                0,
+                0,
+                0,
+                w,
+                h,
+                gl::RGB,
+                gl::FLOAT,
+                equimap.pixels.as_ptr() as _,
+            );
+
+            gl::TextureParameteri(equi_tex.id, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+            gl::TextureParameteri(equi_tex.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+            gl::TextureParameteri(equi_tex.id, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
+            gl::TextureParameteri(equi_tex.id, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
+        }
+
+        equi_tex
+    }
 }
 
-/// Converts an HDR equirectangular map to a cubemap
-pub fn load_cubemap_from_equi(path: &str) -> Result<GlTexture> {
-    let equimap = load_hdr_image(path)?;
-    let equi_tex = create_equi_texture(equimap);
-    let cubemap_tex =
-        create_cubemap_texture(IBL.cubemap_size, gl::RGBA32F, IBL.cubemap_roughnes_levels);
-    let equi_to_cubemap_shader = Shader::comp_with_path("shaders_stitched/equi_to_cubemap.comp")?;
+/// Computes the BRDF part of the specular integral
+pub fn dfg_integration() -> Result<GlTexture> {
+    let brdf_lut = GlTexture::new(gl::TEXTURE_2D);
 
-    cubemap_tex.add_label(cstr!("environment map"));
+    unsafe {
+        gl::TextureStorage2D(brdf_lut.id, 1, gl::RG32F, BRDF_LUT_SIZE, BRDF_LUT_SIZE);
 
-    equi_to_cubemap_shader.use_shader(|| unsafe {
-        gl::BindTextureUnit(0, equi_tex.id);
-        gl::BindImageTexture(
-            1,
-            cubemap_tex.id,
-            0,
-            gl::TRUE,
-            0,
-            gl::WRITE_ONLY,
-            gl::RGBA32F,
-        );
+        gl::TextureParameteri(brdf_lut.id, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
+        gl::TextureParameteri(brdf_lut.id, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
+        gl::TextureParameteri(brdf_lut.id, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+        gl::TextureParameteri(brdf_lut.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+    };
 
-        gl::DispatchCompute(IBL.cubemap_size as _, IBL.cubemap_size as _, CUBEMAP_FACES);
-        gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    let dfg_integration_shader = Shader::comp_with_path("shaders_stitched/dfg_integration.comp")?;
 
-        gl::GenerateTextureMipmap(cubemap_tex.id);
+    gl_time_query("split_sum dfg integration", || {
+        dfg_integration_shader.use_shader(|| unsafe {
+            gl::BindImageTexture(0, brdf_lut.id, 0, gl::FALSE, 0, gl::WRITE_ONLY, gl::RG32F);
+
+            gl::DispatchCompute(
+                BRDF_LUT_SIZE as u32 / IBL.local_size_xy,
+                BRDF_LUT_SIZE as u32 / IBL.local_size_xy,
+                1,
+            );
+            gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        });
     });
 
-    Ok(cubemap_tex)
-}
-
-fn create_cubemap_texture(size: i32, internal_typ: GLenum, mip_levels: i32) -> GlTexture {
-    let tex = GlTexture::new(gl::TEXTURE_CUBE_MAP);
-
-    unsafe {
-        gl::TextureStorage2D(tex.id, mip_levels, internal_typ, size, size);
-
-        let clamp = gl::CLAMP_TO_EDGE as i32;
-        gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_S, clamp);
-        gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_T, clamp);
-        gl::TextureParameteri(tex.id, gl::TEXTURE_WRAP_R, clamp);
-        gl::TextureParameteri(
-            tex.id,
-            gl::TEXTURE_MIN_FILTER,
-            gl::LINEAR_MIPMAP_LINEAR as i32,
-        );
-        gl::TextureParameteri(tex.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-    }
-
-    tex
-}
-
-fn create_equi_texture(equimap: HdrImage) -> GlTexture {
-    let equi_tex = GlTexture::new(gl::TEXTURE_2D);
-
-    unsafe {
-        let w = equimap.width as i32;
-        let h = equimap.height as i32;
-
-        gl::TextureStorage2D(equi_tex.id, 1, gl::RGB32F, w, h);
-        gl::TextureSubImage2D(
-            equi_tex.id,
-            0,
-            0,
-            0,
-            w,
-            h,
-            gl::RGB,
-            gl::FLOAT,
-            equimap.pixels.as_ptr() as _,
-        );
-
-        gl::TextureParameteri(equi_tex.id, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-        gl::TextureParameteri(equi_tex.id, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-        gl::TextureParameteri(equi_tex.id, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
-        gl::TextureParameteri(equi_tex.id, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
-    }
-
-    equi_tex
+    Ok(brdf_lut)
 }
 
 struct HdrImage {

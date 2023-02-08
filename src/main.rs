@@ -7,8 +7,8 @@ use app_settings::AppSettings;
 use camera::{Camera, CameraTyp, Flycam, Orbitalcam};
 use eyre::Result;
 use glam::Vec3;
-use gui::GuiCtx;
-use renderer::Renderer;
+use gui::Gui;
+use renderer::{RenderCtx, Renderer};
 use resources::Resources;
 use sdl2::{keyboard::Scancode, EventPump};
 
@@ -43,16 +43,16 @@ mod brdf_raw;
 
 /// Creates the window, configures OpenGL, sets up the scene and begins the render loop.
 fn main() -> Result<()> {
-    let mut window = AppWindow::new("PBR experiments - Tomáš Král")?;
+    let mut window = AppWindow::new("Physically Based Rendering - Tomáš Král")?;
 
     gl::load_with(|name| window.window.subsystem().gl_get_proc_address(name) as _);
     ogl::init_debug();
 
     let app_settings = RcMut::new(AppSettings::new(&window));
     let resources = RcMut::new(Resources::init()?);
-    let mut renderer = Renderer::new(app_settings.clone())?;
+    let mut renderer = Renderer::new()?;
 
-    let mut gui_ctx = GuiCtx {
+    let mut gui_ctx = Gui {
         resources: resources.clone(),
         app_settings: app_settings.clone(),
     };
@@ -76,7 +76,16 @@ fn main() -> Result<()> {
         };
 
         handle_inputs(&mut window.event_pump, active_cam);
-        renderer.render(active_cam, resources.clone())?;
+
+        {
+            let mut rctx = RenderCtx {
+                app_settings: &mut app_settings.get_mut(),
+                camera: active_cam,
+                res: &mut resources.get_mut(),
+            };
+
+            renderer.render(&mut rctx)?;
+        }
 
         gui_ctx.create_gui(&mut window.egui_ctx);
 

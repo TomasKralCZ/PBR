@@ -1,9 +1,10 @@
 use eyre::{eyre, Result};
 
-use crate::{brdf_raw::BrdfRaw, ogl, scene::Scene, util::timed_scope};
+use crate::{brdf_raw::BrdfRaw, ogl, renderer::ibl::IblEnv, scene::Scene, util::timed_scope};
 
 pub struct Resources {
     pub scenes: Vec<LazyResource<Scene>>,
+    pub envmaps: Vec<LazyResource<IblEnv>>,
     pub merl_brdfs: Vec<LazyResource<BrdfRaw<{ ogl::BRDF_MERL_BINDING }>>>,
     pub mit_brdfs: Vec<LazyResource<BrdfRaw<{ ogl::BRDF_MIT_BINDING }>>>,
     pub utia_brdfs: Vec<LazyResource<BrdfRaw<{ ogl::BRDF_UTIA_BINDING }>>>,
@@ -13,16 +14,6 @@ impl Resources {
     /// Adds models to the scene
     pub fn init() -> Result<Self> {
         let mut scenes = Vec::new();
-
-        //for gltf in globwalk::glob("resources/gltf/*.{glb, gltf}").unwrap() {
-        //    if let Ok(gltf) = gltf {
-        //        if let Some(p) = gltf.path().to_str().map(|s| s.to_string()) {
-        //            let gltf = LazyResource::new(p);
-        //            scenes.push(gltf);
-        //        }
-        //    }
-        //}
-
         let mut add_scene = |path: &'static str| {
             let lazy_model = LazyResource::new(path.to_string());
             scenes.push(lazy_model);
@@ -40,16 +31,8 @@ impl Resources {
         add_scene("resources/gltf/Cylinder.gltf");
         add_scene("resources/gltf/Cube.glb");
 
-        let mut merl_brdfs = Vec::new();
-        for brdf in globwalk::glob("resources/BRDFDatabase/brdfs/*.binary").unwrap() {
-            if let Ok(brdf) = brdf {
-                if let Some(p) = brdf.path().to_str().map(|s| s.to_string()) {
-                    let brdf = LazyResource::new(p);
-                    merl_brdfs.push(brdf);
-                }
-            }
-        }
-
+        let envmaps = Self::add_glob_res("resources/IBL/**.hdr");
+        let mut merl_brdfs = Self::add_glob_res("resources/BRDFDatabase/brdfs/*.binary");
         merl_brdfs.sort_by(|m1, m2| m1.name().cmp(m2.name()));
 
         let mut mit_brdfs = Vec::new();
@@ -64,47 +47,30 @@ impl Resources {
         add_mit_brdf("resources/MITBRDFs/red_velvet.dat");
         add_mit_brdf("resources/MITBRDFs/yellow_satin.dat");
 
-        let mut utia_brdfs = Vec::new();
-        for brdf in globwalk::glob("resources/UTIA/data/*.bin").unwrap() {
-            if let Ok(brdf) = brdf {
-                if let Some(p) = brdf.path().to_str().map(|s| s.to_string()) {
-                    let brdf = LazyResource::new(p);
-                    utia_brdfs.push(brdf);
-                }
-            }
-        }
+        let mut utia_brdfs = Self::add_glob_res("resources/UTIA/data/*.bin");
+        utia_brdfs.sort_by(|m1, m2| m1.name().cmp(m2.name()));
 
         Ok(Self {
             scenes,
+            envmaps,
             merl_brdfs,
             mit_brdfs,
             utia_brdfs,
         })
     }
 
-    pub fn get_scene(&mut self, selected_scene: usize) -> Result<&mut Scene> {
-        self.scenes[selected_scene].get()
-    }
+    fn add_glob_res<T: LoadResource>(glob_path: &str) -> Vec<LazyResource<T>> {
+        let mut resources = Vec::new();
+        for res in globwalk::glob(glob_path).unwrap() {
+            if let Ok(res) = res {
+                if let Some(p) = res.path().to_str().map(|s| s.to_string()) {
+                    let envmap = LazyResource::new(p);
+                    resources.push(envmap);
+                }
+            }
+        }
 
-    pub fn get_merl_brdf(
-        &mut self,
-        selected_brdf: usize,
-    ) -> Result<&mut BrdfRaw<{ ogl::BRDF_MERL_BINDING }>> {
-        self.merl_brdfs[selected_brdf].get()
-    }
-
-    pub fn get_mit_brdf(
-        &mut self,
-        selected_brdf: usize,
-    ) -> Result<&mut BrdfRaw<{ ogl::BRDF_MIT_BINDING }>> {
-        self.mit_brdfs[selected_brdf].get()
-    }
-
-    pub fn get_utia_brdf(
-        &mut self,
-        selected_brdf: usize,
-    ) -> Result<&mut BrdfRaw<{ ogl::BRDF_UTIA_BINDING }>> {
-        self.utia_brdfs[selected_brdf].get()
+        resources
     }
 
     pub fn unload(&mut self) {
@@ -132,7 +98,7 @@ impl<T: LoadResource> LazyResource<T> {
         }
     }
 
-    fn get(&mut self) -> Result<&mut T> {
+    pub fn load(&mut self) -> Result<&mut T> {
         // Can't use if let Some(...) because the borrow checker is angry
         // Can't use get_or_insert_with(...) because I need error handling
         if self.resource.is_some() {
@@ -188,5 +154,11 @@ impl<const BINDING: u32> LoadResource for BrdfRaw<BINDING> {
             "dat" => Self::mit_from_path(path),
             _ => Err(eyre!("BRDF file has no extension name, cannot infer type")),
         }
+    }
+}
+
+impl LoadResource for IblEnv {
+    fn load(path: &str) -> Result<Self> {
+        Self::from_equimap_path(path)
     }
 }
