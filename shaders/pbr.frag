@@ -260,7 +260,6 @@ ShadingParams initShadingParams()
 
     sp.NoV = max(dot(sp.tb.normal, sp.viewDir), 0.0);
 
-    // Disney roughness remapping
     float linearRoughness = roughnessFactor;
     sp.metalness = metallicFactor;
 #ifdef MR_MAP
@@ -268,8 +267,9 @@ ShadingParams initShadingParams()
     sp.metalness *= texture(mrTex, vsOut.texCoords).b;
 #endif
 
-    // Prevent division by 0
+    // Disney roughness remapping
     sp.roughness = linearRoughness * linearRoughness;
+    // Prevent division by 0
     sp.roughness = clamp(sp.roughness, ROUGHNESS_MIN, 1.0);
 
     sp.f0 = vec3(DIELECTRIC_FRESNEL);

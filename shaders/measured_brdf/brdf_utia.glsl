@@ -108,9 +108,6 @@ vec3 lookup_brdf_utia(vec3 toLight, vec3 toViewer, vec3 normal, vec3 tangent, ve
     float theta_in = acos(NoL);
     float theta_out = acos(NoV);
 
-    // float phi_out = atan(clamp(-dot(toViewer, bitangent), -1, 1), clamp(-dot(toViewer, tangent), -1, 1));
-    // float phi_in = atan(clamp(-dot(toLight, bitangent), -1, 1), clamp(-dot(toLight, tangent), -1, 1));
-
     vec3 projected_to_light = normalize(toLight - (clamp(NoL, 0.1, 0.9) * normal));
     vec3 projected_to_viewer = normalize(toViewer - (NoV * normal));
 

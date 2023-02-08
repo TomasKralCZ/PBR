@@ -67,6 +67,7 @@ void main()
 
 #ifdef MIT_BRDF
         vec3 brdf = lookup_brdf_mit(sampleDir, normal, normal, right, up);
+        float normalizer = 1.0;
 #endif
 
 // FIXME(high): analytic light source works, IBL does not
