@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+// TODO(high): add other shader constants and refactor
+
 #[derive(Serialize)]
 pub struct Ibl {
     pub cubemap_size: i32,

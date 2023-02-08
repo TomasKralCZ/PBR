@@ -38,7 +38,6 @@ pub const IRRADIANCE_PORT: u32 = 8;
 pub const PREFILTER_PORT: u32 = 9;
 pub const BRDF_PORT: u32 = 10;
 pub const RAW_BRDF_PORT: u32 = 11;
-pub const CUBEMAP_PORT: u32 = 12;
 
 // Buffer bindings
 pub const TRANSFORM_BINDING: u32 = 0;
@@ -46,8 +45,7 @@ pub const PBR_MATERIAL_BINDING: u32 = 1;
 pub const LIGHTNING_BINDING: u32 = 2;
 pub const SETTINGS_BINDING: u32 = 3;
 pub const BRDF_MERL_BINDING: u32 = 10;
-pub const BRDF_MIT_BINDING: u32 = 11;
-pub const BRDF_UTIA_BINDING: u32 = 12;
+pub const BRDF_UTIA_BINDING: u32 = 11;
 
 pub type TextureId = u32;
 pub type ProgramId = u32;

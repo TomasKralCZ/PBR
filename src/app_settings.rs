@@ -19,8 +19,6 @@ pub struct AppSettings {
     pub pbr_settings: PbrSettings,
     // Index into the resources merl_brdfs vector
     pub selected_merl_brdf: usize,
-    // Index into the resources mit_brdfs vector
-    pub selected_mit_brdf: usize,
     // Index into the resources utia_brdfs vector
     pub selected_utia_brdf: usize,
 }
@@ -36,7 +34,6 @@ impl AppSettings {
             pbr_material_override: PbrMaterial::new(),
             pbr_settings: PbrSettings::new(),
             selected_merl_brdf: 0,
-            selected_mit_brdf: 0,
             selected_utia_brdf: 0,
         }
     }
@@ -65,7 +62,6 @@ pub enum MaterialSrc {
     Gltf,
     PbrOverride,
     MerlBrdf,
-    MitBrdf,
     UtiaBrdf,
 }
 
@@ -75,7 +71,6 @@ impl MaterialSrc {
             MaterialSrc::Gltf => "GLTF",
             MaterialSrc::PbrOverride => "Override material",
             MaterialSrc::MerlBrdf => "MERL BRDF database",
-            MaterialSrc::MitBrdf => "MIT CSAIL database",
             MaterialSrc::UtiaBrdf => "UTIA BRDF database",
         }
     }

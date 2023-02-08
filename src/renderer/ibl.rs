@@ -57,22 +57,28 @@ impl IblEnv {
 
         cubemap_tex.add_label(cstr!("environment map"));
 
-        equi_to_cubemap_shader.use_shader(|| unsafe {
-            gl::BindTextureUnit(0, equi_tex.id);
-            gl::BindImageTexture(
-                1,
-                cubemap_tex.id,
-                0,
-                gl::TRUE,
-                0,
-                gl::WRITE_ONLY,
-                gl::RGBA32F,
-            );
+        gl_time_query("equimap to cubemap", || {
+            equi_to_cubemap_shader.use_shader(|| unsafe {
+                gl::BindTextureUnit(0, equi_tex.id);
+                gl::BindImageTexture(
+                    1,
+                    cubemap_tex.id,
+                    0,
+                    gl::TRUE,
+                    0,
+                    gl::WRITE_ONLY,
+                    gl::RGBA32F,
+                );
 
-            gl::DispatchCompute(IBL.cubemap_size as _, IBL.cubemap_size as _, CUBEMAP_FACES);
-            gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                Self::dispatch_compute_divide(
+                    IBL.cubemap_size as _,
+                    IBL.cubemap_size as _,
+                    CUBEMAP_FACES,
+                );
+                gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-            gl::GenerateTextureMipmap(cubemap_tex.id);
+                gl::GenerateTextureMipmap(cubemap_tex.id);
+            });
         });
 
         Ok(cubemap_tex)

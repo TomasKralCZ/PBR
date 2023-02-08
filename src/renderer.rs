@@ -130,11 +130,6 @@ impl Renderer {
                 let brdf = rctx.res.merl_brdfs[selected_brdf].load()?;
                 self.check_load_brdf(brdf, iblenv)?;
             }
-            MaterialSrc::MitBrdf => {
-                let selected_brdf = rctx.app_settings.selected_mit_brdf;
-                let brdf = rctx.res.mit_brdfs[selected_brdf].load()?;
-                self.check_load_brdf(brdf, iblenv)?;
-            }
             MaterialSrc::UtiaBrdf => {
                 let selected_brdf = rctx.app_settings.selected_utia_brdf;
                 let brdf = rctx.res.utia_brdfs[selected_brdf].load()?;
@@ -245,10 +240,9 @@ impl Renderer {
             self.set_material(primitive, rctx);
 
             let shader = match rctx.app_settings.material_src {
-                b @ (MaterialSrc::MerlBrdf | MaterialSrc::MitBrdf | MaterialSrc::UtiaBrdf) => {
+                b @ (MaterialSrc::MerlBrdf | MaterialSrc::UtiaBrdf) => {
                     let brdf_typ = match b {
                         MaterialSrc::MerlBrdf => BrdfType::Merl,
-                        MaterialSrc::MitBrdf => BrdfType::Mit,
                         MaterialSrc::UtiaBrdf => BrdfType::Utia,
                         _ => unreachable!(),
                     };
@@ -300,7 +294,6 @@ impl Renderer {
             gl::BindTextureUnit(ogl::IRRADIANCE_PORT, iblenv.irradiance_tex.id);
             gl::BindTextureUnit(ogl::PREFILTER_PORT, iblenv.prefilter_tex.id);
             gl::BindTextureUnit(ogl::BRDF_PORT, self.dfg_lut.id);
-            gl::BindTextureUnit(ogl::CUBEMAP_PORT, iblenv.cubemap_tex.id);
         }
 
         Ok(())

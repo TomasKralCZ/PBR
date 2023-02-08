@@ -81,7 +81,6 @@ impl Gui {
                 ui.radio_value(selected, Gltf, Gltf.to_str());
                 ui.radio_value(selected, PbrOverride, PbrOverride.to_str());
                 ui.radio_value(selected, MerlBrdf, MerlBrdf.to_str());
-                ui.radio_value(selected, MitBrdf, MitBrdf.to_str());
                 ui.radio_value(selected, UtiaBrdf, UtiaBrdf.to_str());
             });
 
@@ -229,7 +228,9 @@ impl Gui {
         });
 
         ui.group(|ui| {
-            ui.add(egui::Label::new(RichText::new("Environment maps").heading().strong()));
+            ui.add(egui::Label::new(
+                RichText::new("Environment maps").heading().strong(),
+            ));
             ui.separator();
 
             egui::ScrollArea::vertical()
@@ -257,24 +258,6 @@ impl Gui {
                     for (i, brdf) in resources.merl_brdfs.iter().enumerate() {
                         if ui.button(brdf.name()).clicked() {
                             app_settings.selected_merl_brdf = i;
-                        }
-                    }
-                });
-        });
-
-        ui.group(|ui| {
-            ui.add(egui::Label::new(
-                RichText::new("MIT CSAIL BRDFs").heading().strong(),
-            ));
-            ui.separator();
-
-            egui::ScrollArea::vertical()
-                .max_height(height)
-                .id_source("mit_scroll")
-                .show(ui, |ui| {
-                    for (i, brdf) in resources.mit_brdfs.iter().enumerate() {
-                        if ui.button(brdf.name()).clicked() {
-                            app_settings.selected_mit_brdf = i;
                         }
                     }
                 });

@@ -1,9 +1,12 @@
 #version 460 core
+// clang-format off
 
-// {% include "tools/tonemap.glsl" %}
-// {% include "ibl/cubemap_to_xyz.glsl" %}
+{% include "tools/tonemap.glsl" %}
+{% include "ibl/cubemap_to_xyz.glsl" %}
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = {{ ibl.local_size_xy }}, local_size_y = {{ ibl.local_size_xy }}
+    , local_size_z = {{ ibl.local_size_z }}) in;
+// clang-format off
 
 layout(binding = 0) uniform sampler2D equimap;
 layout(rgba32f, binding = 1) uniform writeonly imageCube cubemap;

@@ -11,10 +11,6 @@
 {% include "measured_brdf/brdf_merl.glsl" %}
 #endif
 
-#ifdef MIT_BRDF
-{% include "measured_brdf/brdf_mit.glsl" %}
-#endif
-
 #ifdef UTIA_BRDF
 {% include "measured_brdf/brdf_utia.glsl" %}
 #endif
@@ -63,11 +59,6 @@ void main()
 #ifdef MERL_BRDF
         vec3 brdf = lookup_brdf_merl(sampleDir, normal, normal, right, up);
         float normalizer = 16.;
-#endif
-
-#ifdef MIT_BRDF
-        vec3 brdf = lookup_brdf_mit(sampleDir, normal, normal, right, up);
-        float normalizer = 1.0;
 #endif
 
 // FIXME(high): analytic light source works, IBL does not

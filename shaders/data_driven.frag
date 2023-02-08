@@ -1,30 +1,28 @@
 #version 460 core
+// clang-format off
 
 //#defines
 
-// {% include "consts.glsl" %}
+{% include "consts.glsl" %}
 
-// {% include "structs/pbrVsOut.glsl" %}
-// {% include "structs/pbrMaterial.glsl" %}
-// {% include "structs/pbrTextures.glsl" %}
-// {% include "structs/lighting.glsl" %}
-// {% include "structs/settings.glsl" %}
-// {% include "structs/brdf_bufs.glsl" %}
+{% include "structs/pbrVsOut.glsl" %}
+{% include "structs/pbrMaterial.glsl" %}
+{% include "structs/pbrTextures.glsl" %}
+{% include "structs/lighting.glsl" %}
+{% include "structs/settings.glsl" %}
+{% include "structs/brdf_bufs.glsl" %}
 
-// {% include "tools/tonemap.glsl" %}
-// {% include "tools/normal_map.glsl" %}
+{% include "tools/tonemap.glsl" %}
+{% include "tools/normal_map.glsl" %}
 
 #ifdef MERL_BRDF
-// {% include "measured_brdf/brdf_merl.glsl" %}
-#endif
-
-#ifdef MIT_BRDF
-// {% include "measured_brdf/brdf_mit.glsl" %}
+{% include "measured_brdf/brdf_merl.glsl" %}
 #endif
 
 #ifdef UTIA_BRDF
-// {% include "measured_brdf/brdf_utia.glsl" %}
+{% include "measured_brdf/brdf_utia.glsl" %}
 #endif
+// clang-format on
 
 out vec4 FragColor;
 
@@ -49,10 +47,6 @@ vec3 calculateDirectLighting(ShadingParams sp)
 
 #ifdef MERL_BRDF
         vec3 brdf = lookup_brdf_merl(lightDir, sp.viewDir, sp.tb.normal, sp.tb.tangent, sp.tb.bitangent);
-#endif
-
-#ifdef MIT_BRDF
-        vec3 brdf = lookup_brdf_mit(lightDir, sp.viewDir, sp.tb.normal, sp.tb.tangent, sp.tb.bitangent);
 #endif
 
 #ifdef UTIA_BRDF

@@ -6,7 +6,6 @@ pub struct Resources {
     pub scenes: Vec<LazyResource<Scene>>,
     pub envmaps: Vec<LazyResource<IblEnv>>,
     pub merl_brdfs: Vec<LazyResource<BrdfRaw<{ ogl::BRDF_MERL_BINDING }>>>,
-    pub mit_brdfs: Vec<LazyResource<BrdfRaw<{ ogl::BRDF_MIT_BINDING }>>>,
     pub utia_brdfs: Vec<LazyResource<BrdfRaw<{ ogl::BRDF_UTIA_BINDING }>>>,
 }
 
@@ -35,18 +34,6 @@ impl Resources {
         let mut merl_brdfs = Self::add_glob_res("resources/BRDFDatabase/brdfs/*.binary");
         merl_brdfs.sort_by(|m1, m2| m1.name().cmp(m2.name()));
 
-        let mut mit_brdfs = Vec::new();
-
-        let mut add_mit_brdf = |path: &'static str| {
-            let brdf = LazyResource::new(path.to_string());
-            mit_brdfs.push(brdf);
-        };
-
-        add_mit_brdf("resources/MITBRDFs/brushed_alum.dat");
-        add_mit_brdf("resources/MITBRDFs/purple_satin.dat");
-        add_mit_brdf("resources/MITBRDFs/red_velvet.dat");
-        add_mit_brdf("resources/MITBRDFs/yellow_satin.dat");
-
         let mut utia_brdfs = Self::add_glob_res("resources/UTIA/data/*.bin");
         utia_brdfs.sort_by(|m1, m2| m1.name().cmp(m2.name()));
 
@@ -54,7 +41,6 @@ impl Resources {
             scenes,
             envmaps,
             merl_brdfs,
-            mit_brdfs,
             utia_brdfs,
         })
     }
