@@ -35,7 +35,6 @@ struct ShadingParams {
     vec3 f0;
 
 #ifdef CLEARCOAT
-    NormalBasis clearcoatTb;
     vec3 clearcoatNormal;
     float clearcoatNoV;
     float clearcoatRoughness;
@@ -137,7 +136,6 @@ vec3 calculateDirectLighting(ShadingParams sp)
         diffuse /= PI;
 
 #ifdef CLEARCOAT
-
         vec3 brdf;
         if (clearcoatEnabled) {
             float clearcoatFresnel;
@@ -296,12 +294,12 @@ ShadingParams initShadingParams()
     }
 
 #ifdef CLEARCOAT_NORMAL_MAP
-    sp.clearcoatTb = getNormalFromMap(clearcoatNormalTex, clearcoatNormalScale, sp.viewDir);
+    sp.clearcoatNormal = getNormalFromMap(clearcoatNormalTex, clearcoatNormalScale, sp.viewDir).normal;
 #else
     // https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_clearcoat/README.md
     // If clearcoatNormalTexture is not given, no normal mapping is applied to the clear coat layer,
     // even if normal mapping is applied to the base material.
-    sp.clearcoatTb.normal = normalize(vsOut.normal);
+    sp.clearcoatNormal = normalize(vsOut.normal);
 #endif
     sp.clearcoatNoV = max(dot(sp.clearcoatNormal, sp.viewDir), 0.0);
 
