@@ -239,12 +239,13 @@ ShadingParams initShadingParams()
 {
     ShadingParams sp;
 
+    // Base color factor is linear RGBA, but base color texture is in sRGB...
     sp.albedo = baseColorFactor;
 #ifdef ALBEDO_MAP
-    sp.albedo *= texture(abledoTex, vsOut.texCoords);
+    vec4 texalbedo = texture(abledoTex, vsOut.texCoords);
+    texalbedo.rgb = pow(texalbedo.rgb, vec3(GAMMA));
+    sp.albedo *= texalbedo;
 #endif
-
-    sp.albedo.rgb = pow(sp.albedo.rgb, vec3(GAMMA));
 
     sp.viewDir = normalize(camPos.xyz - vsOut.fragPos);
 
