@@ -223,7 +223,7 @@ vec3 calculateIBL(ShadingParams sp)
 // Formula from:
 // https://google.github.io/filament/Filament.html#materialsystem/clearcoatmodel/baselayermodification
 // It's derived from Fresnel's formulas
-void modifyBaseF0(inout vec3 f0, float clearcoatIntensity)
+/* void modifyBaseF0(inout vec3 f0, float clearcoatIntensity)
 {
     vec3 sqrtF0 = sqrt(f0);
     vec3 numerator = (1. - 5. * sqrtF0);
@@ -232,7 +232,7 @@ void modifyBaseF0(inout vec3 f0, float clearcoatIntensity)
     vec3 newF0 = (numerator * numerator) / (denom * denom);
     // Only modify base f0 if there's actually coating
     f0 = mix(f0, newF0, clearcoatIntensity);
-}
+} */
 #endif
 
 ShadingParams initShadingParams()
@@ -289,10 +289,6 @@ ShadingParams initShadingParams()
 #ifdef CLEARCOAT_INTENSITY_MAP
     sp.clearcoatIntensity *= texture(clearcoatIntensityTex, vsOut.texCoords).r;
 #endif
-
-    if (clearcoatEnabled) {
-        modifyBaseF0(sp.f0, sp.clearcoatIntensity);
-    }
 
 #ifdef CLEARCOAT_NORMAL_MAP
     sp.clearcoatNormal = getNormalFromMap(clearcoatNormalTex, clearcoatNormalScale, sp.viewDir).normal;
