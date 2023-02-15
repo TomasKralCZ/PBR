@@ -6,5 +6,6 @@ layout(std140, binding = {{ consts.buffer_bindings.settings }}) uniform Settings
     uniform bool directLightEnabled;
     uniform bool IBLEnabled;
     uniform uint diffuseType;
+    uniform bool energyCompEnabled;
 };
 

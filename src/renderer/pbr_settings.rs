@@ -11,6 +11,7 @@ pub struct PbrSettings {
     direct_light_enabled: u32,
     ibl_enabled: u32,
     pub diffuse_type: DiffuseType,
+    energycomp_enabled: u32,
 }
 
 impl PbrSettings {
@@ -20,6 +21,7 @@ impl PbrSettings {
             direct_light_enabled: 1,
             ibl_enabled: 1,
             diffuse_type: DiffuseType::Lambert,
+            energycomp_enabled: 1,
         }
     }
 
@@ -35,6 +37,10 @@ impl PbrSettings {
         self.ibl_enabled = if ibl_enabled { 1 } else { 0 };
     }
 
+    pub fn set_energycomp_enabled(&mut self, energycomp_enabled: bool) {
+        self.energycomp_enabled = if energycomp_enabled { 1 } else { 0 };
+    }
+
     pub fn clearcoat_enabled(&self) -> bool {
         self.clearcoat_enabled != 0
     }
@@ -45,6 +51,10 @@ impl PbrSettings {
 
     pub fn ibl_enabled(&self) -> bool {
         self.ibl_enabled != 0
+    }
+
+    pub fn energycomp_enabled(&self) -> bool {
+        self.energycomp_enabled != 0
     }
 }
 

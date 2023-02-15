@@ -98,10 +98,15 @@ impl Gui {
             let mut clearcoat_enabled = app_settings.pbr_settings.clearcoat_enabled();
             let mut direct_light_enabled = app_settings.pbr_settings.direct_light_enabled();
             let mut ibl_enabled = app_settings.pbr_settings.ibl_enabled();
+            let mut energycomp_enabled = app_settings.pbr_settings.energycomp_enabled();
 
             ui.checkbox(&mut clearcoat_enabled, "Clearcoat enabled");
             ui.checkbox(&mut direct_light_enabled, "Direct light enabled");
             ui.checkbox(&mut ibl_enabled, "IBL enabled");
+            ui.checkbox(
+                &mut energycomp_enabled,
+                "Multiscattering energy compensation enabled",
+            );
 
             app_settings
                 .pbr_settings
@@ -110,6 +115,9 @@ impl Gui {
                 .pbr_settings
                 .set_direct_light_enabled(direct_light_enabled);
             app_settings.pbr_settings.set_ibl_enabled(ibl_enabled);
+            app_settings
+                .pbr_settings
+                .set_energycomp_enabled(energycomp_enabled);
 
             ui.group(|ui| {
                 ui.label("Diffuse BRDF");

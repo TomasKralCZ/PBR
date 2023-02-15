@@ -1,7 +1,7 @@
 #version 460 core
+// clang-format off
 //#defines
 
-// clang-format off
 {% include "consts.glsl" %}
 
 {% include "structs/pbrVsOut.glsl" %}
@@ -156,67 +156,99 @@ vec3 calculateDirectLighting(ShadingParams sp)
     return totalRadiance;
 }
 
-vec3 calculateIBL(ShadingParams sp)
+#ifdef CLEARCOAT
+vec3 calcClearcoatIBL(ShadingParams sp, inout vec3 baseLayerEnvLight)
 {
-    vec3 F = fresnelSchlickRoughness(sp.NoV, sp.f0, sp.roughness);
-    vec3 kD = 1.0 - F;
-    kD *= 1.0 - sp.metalness;
+    vec3 clearcoatReflectDir = reflect(-sp.viewDir, sp.clearcoatNormal);
+    float clearcoatFresnel = fresnelSchlick(DIELECTRIC_FRESNEL, sp.clearcoatNoV) * sp.clearcoatIntensity;
 
-    vec3 irradiance = texture(irradianceMap, sp.tb.normal).rgb;
-    vec3 iblDiffuse = irradiance * sp.albedo.rgb;
+    // clang-format off
+    const float MAX_REFLECTION_LOD = float({{ consts.ibl.cubemap_roughnes_levels - 1 }});
+    // clang-format on
+
+    // Apply clearcoat IBL
+    vec3 clearcoatPrefilteredLight
+        = textureLod(prefilterMap, clearcoatReflectDir, sp.clearcoatRoughness * MAX_REFLECTION_LOD).rgb;
+    vec2 clearcoatDfg = texture(brdfLut, vec2(sp.clearcoatNoV, sp.clearcoatRoughness)).rg;
+    vec3 clearcoatIblSpecular
+        = clearcoatPrefilteredLight * (clearcoatFresnel * clearcoatDfg.x + clearcoatDfg.y);
+
+    // base layer attenuation for energy compensation
+    baseLayerEnvLight *= 1.0 - clearcoatFresnel;
+
+    return clearcoatIblSpecular;
+}
+#endif
 
 #ifdef ANISOTROPY
-    // Taken from: Guy and Agopian, “Physically Based Rendering in Filament.”
-    // Based on
-    // McAuley: Rendering the World of Far Cry 4.
+// Taken from: Guy and Agopian, “Physically Based Rendering in Filament.”
+// Based on
+// McAuley: Rendering the World of Far Cry 4.
+vec3 anisotropyIblBentReflectDir(ShadingParams sp)
+{
     vec3 anisotropicDirection = anisotropy >= 0.0 ? sp.tb.bitangent : sp.tb.tangent;
     vec3 anisotropicTangent = cross(anisotropicDirection, sp.viewDir);
     vec3 anisotropicNormal = cross(anisotropicTangent, anisotropicDirection);
     vec3 bentNormal = normalize(mix(sp.tb.normal, anisotropicNormal, anisotropy));
     vec3 reflectDir = reflect(-sp.viewDir, bentNormal);
+
+    return reflectDir;
+}
+#endif
+
+vec3 calculateIBL(ShadingParams sp)
+{
+#ifdef ANISOTROPY
+    vec3 reflectDir = anisotropyIblBentReflectDir(sp);
 #else
     vec3 reflectDir = reflect(-sp.viewDir, sp.tb.normal);
 #endif
+
     // clang-format off
     const float MAX_REFLECTION_LOD = float({{ consts.ibl.cubemap_roughnes_levels - 1 }});
     // clang-format on
-    vec3 prefilteredLight = textureLod(prefilterMap, reflectDir, sp.roughness * MAX_REFLECTION_LOD).rgb;
+    vec3 prefilteredRadiance = textureLod(prefilterMap, reflectDir, sp.roughness * MAX_REFLECTION_LOD).rgb;
+    vec3 irradiance = texture(irradianceMap, sp.tb.normal).rgb;
     vec2 dfg = texture(brdfLut, vec2(sp.NoV, sp.roughness)).rg;
-    vec3 iblSpecular = prefilteredLight * (F * dfg.x + dfg.y);
 
-    vec3 environmentLight = vec3(0.);
+    // Based on Fdez-Agüera, “A Multiple-Scattering Microfacet Model for Real-Time Image Based Lighting.”
+    vec3 fresnel
+        = sp.f0 + (max(vec3(1. - sp.roughness), sp.f0) - sp.f0) * pow(clamp(1. - sp.NoV, 0., 1.), 5.);
+
+    vec3 baseLayerEnvLight;
+    if (energyCompEnabled) {
+        vec3 FssEss = fresnel * dfg.x + dfg.y;
+        // Multiple scattering
+        float Ess = dfg.x + dfg.y;
+        float Ems = 1. - Ess;
+        vec3 FAvg = sp.f0 + (1. - sp.f0) / 21.;
+        vec3 Fms = FssEss * FAvg / (1. - (1. - Ess) * FAvg);
+        // Dielectrics
+        vec3 Edss = 1. - (FssEss + Fms * Ems);
+        vec3 kD = sp.albedo.rgb * Edss * (1. - sp.metalness);
+
+        baseLayerEnvLight = FssEss * prefilteredRadiance + (Fms * Ems + kD) * irradiance;
+    } else {
+        // Specular
+        vec3 FssEss = fresnel * dfg.x + dfg.y;
+        // Diffuse
+        vec3 kD = (1.0 - fresnel) * (1. - sp.metalness);
+
+        baseLayerEnvLight = (FssEss * prefilteredRadiance) + (irradiance * sp.albedo.rgb * kD);
+    }
 
 #ifdef CLEARCOAT
     if (clearcoatEnabled) {
-        vec3 clearcoatReflectDir = reflect(-sp.viewDir, sp.clearcoatNormal);
-
-        // https://google.github.io/filament/Filament.html#lighting/imagebasedlights/clearcoat
-        float clearcoatFresnel = fresnelSchlick(DIELECTRIC_FRESNEL, sp.clearcoatNoV) * sp.clearcoatIntensity;
-
-        // Apply clearcoat IBL
-        vec3 clearcoatPrefilteredLight
-            = textureLod(prefilterMap, clearcoatReflectDir, sp.clearcoatRoughness * MAX_REFLECTION_LOD).rgb;
-        vec2 clearcoatDfg = texture(brdfLut, vec2(sp.clearcoatNoV, sp.clearcoatRoughness)).rg;
-        vec3 clearcoatIblSpecular
-            = clearcoatPrefilteredLight * (clearcoatFresnel * clearcoatDfg.x + clearcoatDfg.y);
-
-        // base layer attenuation for energy compensation
-        iblDiffuse *= 1.0 - clearcoatFresnel;
-        iblSpecular *= 1.0 - clearcoatFresnel;
-
-        environmentLight = (kD * iblDiffuse + iblSpecular) + clearcoatIblSpecular;
-    } else {
-        environmentLight = (kD * iblDiffuse + iblSpecular);
+        vec3 clearcoatIblSpecular = calcClearcoatIBL(sp, baseLayerEnvLight);
+        baseLayerEnvLight += clearcoatIblSpecular;
     }
-#else
-    environmentLight = (kD * iblDiffuse + iblSpecular);
 #endif
 
 #ifdef OCCLUSION_MAP
-    environmentLight *= texture(occlusionTex, vsOut.texCoords).x * occlusionStrength;
+    baseLayerEnvLight *= texture(occlusionTex, vsOut.texCoords).x * occlusionStrength;
 #endif
 
-    return environmentLight;
+    return baseLayerEnvLight;
 }
 
 #ifdef CLEARCOAT

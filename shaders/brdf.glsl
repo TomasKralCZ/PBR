@@ -3,11 +3,6 @@ vec3 fresnelSchlick(vec3 f0, float VoH) { return f0 + (1. - f0) * pow(clamp(1. -
 
 float fresnelSchlick(float f0, float VoH) { return f0 + (1. - f0) * pow(clamp(1. - VoH, 0.0, 1.0), 5.); }
 
-vec3 fresnelSchlickRoughness(float VoH, vec3 f0, float roughness)
-{
-    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - VoH, 0.0, 1.0), 5.0);
-}
-
 // roughness is perceptual roughness (roughness squared)
 float distributionGgx(float NoH, float roughness)
 {
