@@ -225,7 +225,7 @@ vec3 calculateIBL(ShadingParams sp)
         vec3 Fms = FssEss * FAvg / (1. - (1. - Ess) * FAvg);
         // Dielectrics
         vec3 Edss = 1. - (FssEss + Fms * Ems);
-        vec3 kD = sp.albedo.rgb * Edss * (1. - sp.metalness);
+        vec3 kD = sp.albedo.rgb * Edss;
 
         baseLayerEnvLight = FssEss * prefilteredRadiance + (Fms * Ems + kD) * irradiance;
     } else {
