@@ -59,7 +59,7 @@ vec3 clearcoatBrdf(ShadingParams sp, out float fresnel, vec3 halfway, vec3 light
 #endif
 
 #ifdef ANISOTROPY
-void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 fresnel, float NoH, float NoL,
+void baseSpecularAnisotropic(ShadingParams sp, out vec3 specular, out vec3 fresnel, float NoH, float NoL,
     float VoH, vec3 halfway, vec3 lightDir)
 {
     float D
@@ -79,7 +79,7 @@ void baseSpecularAnisotropic(ShadingParams sp, inout vec3 specular, inout vec3 f
 #endif
 
 void baseSpecularIsotropic(
-    ShadingParams sp, inout vec3 specular, inout vec3 fresnel, float NoH, float NoL, float VoH)
+    ShadingParams sp, out vec3 specular, out vec3 fresnel, float NoH, float NoL, float VoH)
 {
     float D = distributionGgx(NoH, sp.roughness);
     fresnel = fresnelSchlick(sp.f0, VoH);
@@ -99,8 +99,9 @@ vec3 calculateDirectLighting(ShadingParams sp)
         float LoH = max(dot(lightDir, halfway), 0.0);
         float NoL = max(dot(sp.tb.normal, lightDir), 0.0);
 
-        // TODO: should add attenuation...
         vec3 light = lightColors[i].xyz;
+        float dist = distance(lightPositions[i].xyz, vsOut.fragPos);
+        light *= 1. / (dist * dist + 0.00001);
 
         vec3 fresnel;
         vec3 specular;
@@ -138,13 +139,13 @@ vec3 calculateDirectLighting(ShadingParams sp)
         vec3 brdf = diffuse + specular;
 
 #ifdef CLEARCOAT
-    if (clearcoatEnabled) {
-        float clearcoatFresnel;
-        vec3 clearcoatColor = clearcoatBrdf(sp, clearcoatFresnel, halfway, lightDir, VoH);
+        if (clearcoatEnabled) {
+            float clearcoatFresnel;
+            vec3 clearcoatColor = clearcoatBrdf(sp, clearcoatFresnel, halfway, lightDir, VoH);
 
-        // Energy loss due to the clearcoat layer is given by 1 - clearcoatFresnel
-        brdf = brdf * (1. - clearcoatFresnel) + clearcoatColor;
-    }
+            // Energy loss due to the clearcoat layer is given by 1 - clearcoatFresnel
+            brdf = brdf * (1. - clearcoatFresnel) + clearcoatColor;
+        }
 #endif
 
         totalRadiance += brdf * light * NoL;

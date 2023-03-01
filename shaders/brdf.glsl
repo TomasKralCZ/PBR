@@ -50,7 +50,8 @@ float visibilitySmithHeightCorrelatedGgx(float NoV, float NoL, float roughness)
     float denoml = NoL * sqrt(asq + NoVsq * (1. - asq));
     float denomv = NoV * sqrt(asq + NoLsq * (1. - asq));
 
-    return 0.5 / (denoml + denomv);
+    // Protect against division by zero
+    return 0.5 / (denoml + denomv + 0.00001);
 }
 
 #ifdef ANISOTROPY

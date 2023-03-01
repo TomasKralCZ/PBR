@@ -38,8 +38,9 @@ vec3 calculateDirectLighting(ShadingParams sp)
     vec3 totalRadiance = vec3(0.);
 
     for (int i = 0; i < lights; i++) {
-        // TODO: should add attenuation...
-        vec3 radiance = lightColors[i].xyz;
+        vec3 light = lightColors[i].xyz;
+        float dist = distance(lightPositions[i].xyz, vsOut.fragPos);
+        light *= 1. / (dist * dist + 0.00001);
 
         vec3 lightDir = normalize(lightPositions[i].xyz - vsOut.fragPos);
 
@@ -50,11 +51,11 @@ vec3 calculateDirectLighting(ShadingParams sp)
 #endif
 
 #ifdef UTIA_BRDF
-        // FIXME(high): I'm pretty sure some of the UTIA values are negative
+        // INVESTIGATE: I'm pretty sure some of the UTIA values are negative
         vec3 brdf = lookup_brdf_utia(lightDir, sp.viewDir, sp.tb.normal, sp.tb.tangent, sp.tb.bitangent);
 #endif
 
-        totalRadiance += radiance * brdf * NoL;
+        totalRadiance += light * brdf * NoL;
     }
 
     return totalRadiance;
