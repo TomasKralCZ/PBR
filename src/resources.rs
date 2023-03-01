@@ -31,6 +31,7 @@ impl Resources {
         add_scene("resources/gltf/Cylinder.gltf");
         add_scene("resources/gltf/Cube.glb");
         add_scene("resources/gltf/RoughnessMetallicSpheres.glb");
+        add_scene("resources/gltf/NormalTangentMirrorTest.glb");
 
         let envmaps = Self::add_glob_res("resources/IBL/**.hdr");
         let mut merl_brdfs = Self::add_glob_res("resources/BRDFDatabase/brdfs/*.binary");

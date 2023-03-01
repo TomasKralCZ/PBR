@@ -33,13 +33,13 @@ void main()
 
     mat3 normalMat = mat3(transpose(inverse(model)));
 
-    // TODO: is normalization needed ?
-    vsOut.normal = normalize(normalMat * inNormal);
-    vsOut.tangent = normalize(normalMat * inTangent.w * inTangent.xyz);
+    vec3 normal = normalize(normalMat * inNormal);
+    vec3 tangent = normalize(normalMat * inTangent.xyz);
+    // "The bitangent vectors MUST be computed by taking the cross product of the normal
+    // and tangent XYZ vectors and multiplying it against the W component of the tangent"
+    vec3 bitangent = normalize(inTangent.w * (cross(normal, tangent)));
 
-    // modified Gram-Schmidt process
-    vsOut.tangent = normalize(vsOut.tangent - dot(vsOut.tangent, vsOut.normal) * vsOut.normal);
-
-    // Correct handedness with tangent.w
-    vsOut.bitangent = normalize(inTangent.w * (cross(inNormal, inTangent.xyz)));
+    vsOut.normal = normal;
+    vsOut.tangent = tangent;
+    vsOut.bitangent = bitangent;
 }

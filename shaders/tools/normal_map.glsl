@@ -23,7 +23,8 @@ NormalBasis getNormalFromMap(sampler2D tex, float scaleNormal, vec3 viewDir)
     tb.normal = adjustedNormal;
 
     // Math from Real-Time rendering
-    // tangent and bitangent vectors need to be adjusted for anisotropic BRDFs and for measured BRDFs
+    // Tangent and bitangent vectors need to be adjusted for anisotropic
+    // BRDFs in case normal mapping is also used.
     tb.tangent = tangent - dot(tangent, tb.normal) * tb.normal;
     tb.bitangent = bitangent - dot(bitangent, tb.normal) * tb.normal;
 
