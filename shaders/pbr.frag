@@ -135,19 +135,16 @@ vec3 calculateDirectLighting(ShadingParams sp)
 
         diffuse /= PI;
 
-#ifdef CLEARCOAT
-        vec3 brdf;
-        if (clearcoatEnabled) {
-            float clearcoatFresnel;
-            vec3 clearcoatColor = clearcoatBrdf(sp, clearcoatFresnel, halfway, lightDir, VoH);
-
-            // Energy loss due to the clearcoat layer is given by 1 - clearcoatFresnel
-            brdf = (diffuse + specular) * (1. - clearcoatFresnel) + clearcoatColor;
-        } else {
-            brdf = diffuse + specular;
-        }
-#else
         vec3 brdf = diffuse + specular;
+
+#ifdef CLEARCOAT
+    if (clearcoatEnabled) {
+        float clearcoatFresnel;
+        vec3 clearcoatColor = clearcoatBrdf(sp, clearcoatFresnel, halfway, lightDir, VoH);
+
+        // Energy loss due to the clearcoat layer is given by 1 - clearcoatFresnel
+        brdf = brdf * (1. - clearcoatFresnel) + clearcoatColor;
+    }
 #endif
 
         totalRadiance += brdf * light * NoL;

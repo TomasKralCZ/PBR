@@ -20,6 +20,7 @@ vec3 uncharted2TonemapPartial(vec3 x)
     return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
 }
 
+// https://gdcvault.com/play/1012351/Uncharted-2-HDR
 void uncharted2Filmic(inout vec3 v)
 {
     float exposureBias = 2.0f;
