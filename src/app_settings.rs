@@ -1,3 +1,5 @@
+use glam::Vec3;
+
 use crate::{
     camera::CameraTyp,
     renderer::{pbr_settings::PbrSettings, PbrMaterial},
@@ -9,6 +11,7 @@ pub struct AppSettings {
     pub selected_scene: usize,
     // Index into resources envmaps vector
     pub selected_envmap: usize,
+    pub blur_background: bool,
 
     pub camera_typ: CameraTyp,
 
@@ -21,6 +24,10 @@ pub struct AppSettings {
     pub selected_merl_brdf: usize,
     // Index into the resources utia_brdfs vector
     pub selected_utia_brdf: usize,
+
+    pub model_translation: Vec3,
+    pub model_scale: f32,
+    pub model_rotation: Vec3,
 }
 
 impl AppSettings {
@@ -28,6 +35,7 @@ impl AppSettings {
         Self {
             selected_scene: 0,
             selected_envmap: 0,
+            blur_background: true,
             viewport_dim: ViewportDim::new(window),
             material_src: MaterialSrc::Gltf,
             camera_typ: CameraTyp::Orbital,
@@ -35,6 +43,9 @@ impl AppSettings {
             pbr_settings: PbrSettings::new(),
             selected_merl_brdf: 0,
             selected_utia_brdf: 0,
+            model_translation: Vec3::splat(0.),
+            model_scale: 1.,
+            model_rotation: Vec3::splat(0.),
         }
     }
 }

@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use cstr::cstr;
 use eyre::Result;
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 
 use shader_constants::CONSTS;
 
@@ -12,7 +12,7 @@ use crate::{
     camera::Camera,
     ogl::{texture::GlTexture, uniform_buffer::UniformBuffer, vao::Vao},
     resources::Resources,
-    scene::{Mesh, Node, Primitive},
+    scene::{Mesh, Node, Primitive, Scene},
 };
 
 mod cubemap;
@@ -82,7 +82,7 @@ impl Renderer {
         let selected_scene = rctx.app_settings.selected_scene;
         let scene = scenes[selected_scene].load()?;
 
-        let transform = scene.transform;
+        let transform = Self::calc_model_transform(scene, rctx.app_settings);
         self.render_gltf_node(&scene.root, transform, rctx)?;
 
         rctx.res.scenes = scenes;
@@ -111,13 +111,24 @@ impl Renderer {
         let scene = rctx.res.scenes[selected_scene].load()?;
         self.transforms.inner.projection = persp;
         self.transforms.inner.view = rctx.camera.view_mat();
-        self.transforms.inner.model = scene.transform;
+        self.transforms.inner.model = Self::calc_model_transform(scene, rctx.app_settings);
         self.transforms.update();
 
         self.lighting.inner.cam_pos = rctx.camera.get_pos().extend(0.0);
         self.lighting.update();
 
         Ok(())
+    }
+
+    fn calc_model_transform(scene: &mut Scene, app_settings: &mut AppSettings) -> Mat4 {
+        let scale = Vec3::splat(app_settings.model_scale);
+        let translation = app_settings.model_translation;
+        let rot = app_settings.model_rotation;
+        let rotation = Quat::from_euler(glam::EulerRot::XYZ, rot.x, rot.y, rot.z);
+
+        let settings_transform =
+            Mat4::from_scale_rotation_translation(scale, rotation, translation);
+        settings_transform * scene.transform
     }
 
     fn update_brdf(&mut self, rctx: &mut RenderCtx) -> Result<()> {
@@ -144,8 +155,14 @@ impl Renderer {
         let selected_envmap = rctx.app_settings.selected_envmap;
         let cubemap = rctx.res.envmaps[selected_envmap].load()?;
 
+        let texid = if rctx.app_settings.blur_background {
+            cubemap.irradiance_tex.id
+        } else {
+            cubemap.cubemap_tex.id
+        };
+
         self.shaders.cubemap_shader.use_shader(|| unsafe {
-            gl::BindTextureUnit(0, cubemap.cubemap_tex.id);
+            gl::BindTextureUnit(0, texid);
 
             gl::BindVertexArray(self.cube.id);
             gl::DrawElements(

@@ -34,7 +34,7 @@ void main()
     vec3 color = texture(equimap, uv).rgb;
 
     // INVESTIGATE: handle extremely-high-contrast HDR maps better than using clamping
-    color = clamp(color, 0.0, 20.0);
+    color = clamp(color, 0.0, 100.0);
 
     imageStore(cubemap, ivec3(globalId), vec4(color, 1.0));
 }

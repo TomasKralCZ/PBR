@@ -1,4 +1,4 @@
-use egui::{CtxRef, RichText, Ui};
+use egui::{CtxRef, DragValue, RichText, Ui};
 
 use crate::{
     app_settings::{self, MaterialSrc},
@@ -50,6 +50,37 @@ impl Gui {
         egui::global_dark_light_mode_switch(ui);
 
         ui.group(|ui| {
+            ui.add(egui::Label::new(
+                RichText::new("Model transformation").heading().strong(),
+            ));
+            ui.separator();
+
+            let trans = &mut app_settings.model_translation;
+            ui.label("Translation");
+            ui.horizontal(|ui| {
+                ui.add(DragValue::new(&mut trans.x).prefix("x: ").speed(0.1));
+                ui.add(DragValue::new(&mut trans.y).prefix("y: ").speed(0.1));
+                ui.add(DragValue::new(&mut trans.z).prefix("z: ").speed(0.1));
+            });
+
+            let scale = &mut app_settings.model_scale;
+            ui.label("Scale");
+            ui.add(
+                DragValue::new(scale)
+                    .speed(0.1)
+                    .clamp_range(0.0001..=f32::INFINITY),
+            );
+
+            let rot = &mut app_settings.model_rotation;
+            ui.label("Rotation");
+            ui.horizontal(|ui| {
+                ui.add(DragValue::new(&mut rot.x).prefix("x: ").speed(0.1));
+                ui.add(DragValue::new(&mut rot.y).prefix("y: ").speed(0.1));
+                ui.add(DragValue::new(&mut rot.z).prefix("z: ").speed(0.1));
+            });
+        });
+
+        ui.group(|ui| {
             ui.add(egui::Label::new(RichText::new("Camera").heading().strong()));
             ui.separator();
 
@@ -94,6 +125,8 @@ impl Gui {
                 RichText::new("PBR Render settings").heading().strong(),
             ));
             ui.separator();
+
+            ui.checkbox(&mut app_settings.blur_background, "Blur background");
 
             let mut clearcoat_enabled = app_settings.pbr_settings.clearcoat_enabled();
             let mut direct_light_enabled = app_settings.pbr_settings.direct_light_enabled();
@@ -163,7 +196,6 @@ impl Gui {
                     let mut color = app_settings.pbr_material_override.base_color_factor;
                     color = color.map(|f| f * 255.);
 
-                    use egui::DragValue;
                     ui.add(
                         DragValue::new(&mut color[0])
                             .prefix("r: ")
@@ -217,7 +249,7 @@ impl Gui {
         let mut resources = self.resources.get_mut();
         let mut app_settings = self.app_settings.get_mut();
 
-        let height = ui.available_height() / 5.;
+        let height = ui.available_height() / 4.5;
 
         ui.group(|ui| {
             ui.add(egui::Label::new(RichText::new("Scenes").heading().strong()));

@@ -13,25 +13,7 @@ pub struct Resources {
 impl Resources {
     /// Adds models to the scene
     pub fn init() -> Result<Self> {
-        let mut scenes = Vec::new();
-        let mut add_scene = |path: &'static str| {
-            let lazy_model = LazyResource::new(path.to_string());
-            scenes.push(lazy_model);
-        };
-
-        add_scene("resources/gltf/helmet/DamagedHelmet.gltf");
-
-        add_scene("resources/gltf/shoe_with_clearcoat/shoe.gltf");
-        add_scene("resources/gltf/ClearCoatTest.glb");
-
-        add_scene("resources/gltf/shader_ball/shaderBall.glb");
-        add_scene("resources/gltf/Sphere.glb");
-        add_scene("resources/gltf/Cylinder.gltf");
-        add_scene("resources/gltf/Cube.glb");
-
-        add_scene("resources/gltf/RoughnessMetallicSpheres.glb");
-        add_scene("resources/gltf/MetalRoughSpheres/glTF-Binary/MetalRoughSpheres.glb");
-        add_scene("resources/gltf/NormalTangentMirrorTest.glb");
+        let scenes = Self::add_glob_res("resources/gltf/**/*.{gltf,glb}");
 
         let envmaps = Self::add_glob_res("resources/IBL/**/*.hdr");
         let mut merl_brdfs = Self::add_glob_res("resources/BRDFDatabase/**/*.binary");
