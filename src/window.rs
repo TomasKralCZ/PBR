@@ -45,6 +45,10 @@ impl AppWindow {
     /// Initializes the OpenGL context, the egui renderer and the SDL2 video subsystem.
     pub fn new(title: &str) -> Result<Self> {
         let sdl_context = sdl2::init().map_err(|e| eyre!("{e}"))?;
+
+        #[cfg(target_os = "windows")]
+        unsafe { windows::Win32::UI::WindowsAndMessaging::SetProcessDPIAware() };
+
         let video_subsystem = sdl_context.video().map_err(|e| eyre!("{e}"))?;
 
         let size = video_subsystem
