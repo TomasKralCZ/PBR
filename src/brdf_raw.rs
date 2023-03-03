@@ -2,12 +2,11 @@ use std::{fs::File, io::Read};
 
 use eyre::{eyre, Result};
 
-use crate::ogl::{shader::shader_permutations::ShaderDefines, ssbo::Ssbo, texture::GlTexture};
+use crate::ogl::{shader::shader_permutations::ShaderDefines, ssbo::Ssbo};
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub enum BrdfType {
     Merl,
-    Mit,
     Utia,
 }
 
@@ -15,7 +14,6 @@ impl BrdfType {
     pub fn to_str(self) -> &'static str {
         match self {
             BrdfType::Merl => "MERL_BRDF",
-            BrdfType::Mit => "MIT_BRDF",
             BrdfType::Utia => "UTIA_BRDF",
         }
     }
@@ -30,7 +28,6 @@ impl ShaderDefines for BrdfType {
 pub struct BrdfRaw<const BINDING: u32> {
     pub typ: BrdfType,
     pub ssbo: Ssbo<BINDING>,
-    pub ibl_texture: Option<GlTexture>,
 }
 
 impl<const BINDING: u32> BrdfRaw<BINDING> {
@@ -60,43 +57,6 @@ impl<const BINDING: u32> BrdfRaw<BINDING> {
         Ok(Self {
             typ: BrdfType::Merl,
             ssbo,
-            ibl_texture: None,
-        })
-    }
-
-    /// Experimental Analysis of BRDF Models
-    /// Addy Ngan and Frédo Durand and Wojciech Matusik
-    /// Proceedings of the Eurographics Symposium on Rendering, 2005, 117-226
-    pub fn mit_from_path(path: &str) -> Result<Self> {
-        let mut file = File::open(path)?;
-
-        let mut header = [0i32; 16];
-        file.read_exact(bytemuck::cast_slice_mut(&mut header))?;
-
-        if header[6] != 1 {
-            return Err(eyre!("Parametrization is not standard"));
-        }
-
-        if header[7] != 0 {
-            return Err(eyre!("Binning is not uniform"));
-        }
-
-        let samples = header[0] as u32 * header[1] as u32 * header[2] as u32 * header[3] as u32;
-        let channels = header[10] as u32;
-
-        if channels != 3 {
-            return Err(eyre!("Wrong number of channels"));
-        }
-
-        let mut raw = vec![0f32; (channels * samples) as usize];
-        file.read_exact(bytemuck::cast_slice_mut(&mut raw))?;
-
-        let ssbo = Ssbo::new(&raw);
-
-        Ok(Self {
-            typ: BrdfType::Mit,
-            ssbo,
-            ibl_texture: None,
         })
     }
 
@@ -122,7 +82,6 @@ impl<const BINDING: u32> BrdfRaw<BINDING> {
         Ok(Self {
             typ: BrdfType::Utia,
             ssbo,
-            ibl_texture: None,
         })
     }
 }

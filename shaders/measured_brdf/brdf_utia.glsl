@@ -1,5 +1,8 @@
 
-// Based on Jiri Filip's code
+/// Based on Jiri Filip's code
+/// Template-Based Sampling of Anisotropic BRDFs
+/// Filip J., Vavra R.
+/// Computer Graphics Forum (Proceedings of Pacific Graphics 2014, Seoul, Korea), Eurographics 2014
 
 const float STEP_T = 15.;
 const float STEP_P = 7.5;

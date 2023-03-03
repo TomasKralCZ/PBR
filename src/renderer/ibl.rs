@@ -6,19 +6,13 @@ use eyre::Result;
 use gl::types::GLenum;
 use image::codecs::hdr;
 
-use crate::brdf_raw::BrdfType;
-use crate::ogl::shader::shader_permutations::ShaderDefines;
-use crate::ogl::shader::Shader;
-use crate::ogl::ssbo::Ssbo;
-use crate::ogl::texture::GlTexture;
-use crate::ogl::{gl_time_query, TextureId};
+use crate::ogl::{gl_time_query, shader::Shader, texture::GlTexture, TextureId};
 
 use shader_constants::CONSTS;
 
 const CUBEMAP_FACES: u32 = 6;
 const IRRADIANCE_MAP_SIZE: i32 = 64;
 const PREFILTER_MAP_SIZE: i32 = 256;
-const MEASURED_BRDF_MAP_SIZE: u32 = 128;
 const BRDF_LUT_SIZE: i32 = 512;
 
 pub struct IblEnv {
@@ -82,37 +76,6 @@ impl IblEnv {
         });
 
         Ok(cubemap_tex)
-    }
-
-    pub fn compute_ibl_brdf<const BINDING: u32>(
-        brdf_ssbo: &Ssbo<BINDING>,
-        cubemap: &GlTexture,
-        brdf_type: BrdfType,
-    ) -> Result<GlTexture> {
-        let tex = Self::create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F, 1);
-        // TODO: shader permutations abstraction for compute shaders
-        let shader = Shader::comp_with_path_defines(
-            "shaders_stitched/raw_brdf_integration.comp",
-            &brdf_type.defines(),
-        )?;
-
-        gl_time_query("measured BRDF compute shader", || {
-            shader.use_shader(|| unsafe {
-                gl::BindTextureUnit(0, cubemap.id);
-                brdf_ssbo.bind();
-                gl::BindImageTexture(1, tex.id, 0, gl::TRUE, 0, gl::WRITE_ONLY, gl::RGBA32F);
-
-                Self::dispatch_compute_divide(
-                    MEASURED_BRDF_MAP_SIZE,
-                    MEASURED_BRDF_MAP_SIZE,
-                    CUBEMAP_FACES,
-                );
-
-                gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
-            });
-        });
-
-        Ok(tex)
     }
 
     /// Computes the diffuse irradiance map from the cubemap

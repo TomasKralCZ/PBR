@@ -8,7 +8,7 @@ use shader_constants::CONSTS;
 
 use crate::{
     app_settings::{AppSettings, MaterialSrc},
-    brdf_raw::{BrdfRaw, BrdfType},
+    brdf_raw::BrdfType,
     camera::Camera,
     ogl::{texture::GlTexture, uniform_buffer::UniformBuffer, vao::Vao},
     resources::Resources,
@@ -26,7 +26,6 @@ mod transforms;
 pub use material::PbrMaterial;
 
 use self::{
-    ibl::IblEnv,
     lighting::Lighting,
     pbr_settings::PbrSettings,
     shaders::{DataDrivenDefines, PbrDefines, Shaders},
@@ -123,43 +122,20 @@ impl Renderer {
 
     fn update_brdf(&mut self, rctx: &mut RenderCtx) -> Result<()> {
         let material_src = rctx.app_settings.material_src;
-        let selected_envmap = rctx.app_settings.selected_envmap;
-        let iblenv = rctx.res.envmaps[selected_envmap].load()?;
 
         match material_src {
             MaterialSrc::MerlBrdf => {
                 let selected_brdf = rctx.app_settings.selected_merl_brdf;
                 let brdf = rctx.res.merl_brdfs[selected_brdf].load()?;
-                self.check_load_brdf(brdf, iblenv)?;
+                brdf.ssbo.bind();
             }
             MaterialSrc::UtiaBrdf => {
                 let selected_brdf = rctx.app_settings.selected_utia_brdf;
                 let brdf = rctx.res.utia_brdfs[selected_brdf].load()?;
-                self.check_load_brdf(brdf, iblenv)?;
+                brdf.ssbo.bind();
             }
             _ => (),
         };
-
-        Ok(())
-    }
-
-    fn check_load_brdf<const BINDING: u32>(
-        &self,
-        brdf: &mut BrdfRaw<BINDING>,
-        iblenv: &mut IblEnv,
-    ) -> Result<()> {
-        if brdf.ibl_texture.is_none() {
-            let ibl_texture = IblEnv::compute_ibl_brdf(&brdf.ssbo, &iblenv.cubemap_tex, brdf.typ)?;
-            brdf.ibl_texture = Some(ibl_texture);
-        }
-
-        brdf.ssbo.bind();
-        unsafe {
-            gl::BindTextureUnit(
-                CONSTS.texture_ports.raw_brdf,
-                brdf.ibl_texture.as_ref().unwrap().id,
-            );
-        }
 
         Ok(())
     }
@@ -277,6 +253,10 @@ impl Renderer {
             }
         };
 
+        // Do this first as this can use texture units 0-1
+        let selected_envmap = rctx.app_settings.selected_envmap;
+        let iblenv = rctx.res.envmaps[selected_envmap].load()?;
+
         let tp = CONSTS.texture_ports;
         bind_texture_unit(&primitive.pbr_material.base_color_texture, tp.albedo);
         bind_texture_unit(&primitive.pbr_material.mr_texture, tp.mr);
@@ -289,9 +269,6 @@ impl Renderer {
             bind_texture_unit(&cc.roughness_texture, tp.clearcoat_roughness);
             bind_texture_unit(&cc.normal_texture, tp.clearcoat_normal);
         }
-
-        let selected_envmap = rctx.app_settings.selected_envmap;
-        let iblenv = rctx.res.envmaps[selected_envmap].load()?;
 
         unsafe {
             gl::BindTextureUnit(tp.irradiance, iblenv.irradiance_tex.id);

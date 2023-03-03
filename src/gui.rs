@@ -217,7 +217,7 @@ impl Gui {
         let mut resources = self.resources.get_mut();
         let mut app_settings = self.app_settings.get_mut();
 
-        let height = ui.available_height() / 4.;
+        let height = ui.available_height() / 5.;
 
         ui.group(|ui| {
             ui.add(egui::Label::new(RichText::new("Scenes").heading().strong()));

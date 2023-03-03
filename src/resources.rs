@@ -20,8 +20,6 @@ impl Resources {
         };
 
         add_scene("resources/gltf/helmet/DamagedHelmet.gltf");
-        add_scene("resources/gltf/MetalRoughSpheres/glTF-Binary/MetalRoughSpheres.glb");
-        add_scene("resources/gltf/NewSky_PolarFacilityMap.glb");
 
         add_scene("resources/gltf/shoe_with_clearcoat/shoe.gltf");
         add_scene("resources/gltf/ClearCoatTest.glb");
@@ -30,14 +28,16 @@ impl Resources {
         add_scene("resources/gltf/Sphere.glb");
         add_scene("resources/gltf/Cylinder.gltf");
         add_scene("resources/gltf/Cube.glb");
+
         add_scene("resources/gltf/RoughnessMetallicSpheres.glb");
+        add_scene("resources/gltf/MetalRoughSpheres/glTF-Binary/MetalRoughSpheres.glb");
         add_scene("resources/gltf/NormalTangentMirrorTest.glb");
 
-        let envmaps = Self::add_glob_res("resources/IBL/**.hdr");
-        let mut merl_brdfs = Self::add_glob_res("resources/BRDFDatabase/brdfs/*.binary");
+        let envmaps = Self::add_glob_res("resources/IBL/**/*.hdr");
+        let mut merl_brdfs = Self::add_glob_res("resources/BRDFDatabase/**/*.binary");
         merl_brdfs.sort_by(|m1, m2| m1.name().cmp(m2.name()));
 
-        let mut utia_brdfs = Self::add_glob_res("resources/UTIA/data/*.bin");
+        let mut utia_brdfs = Self::add_glob_res("resources/UTIA/**/*.bin");
         utia_brdfs.sort_by(|m1, m2| m1.name().cmp(m2.name()));
 
         Ok(Self {
@@ -140,7 +140,6 @@ impl<const BINDING: u32> LoadResource for BrdfRaw<BINDING> {
         match ext {
             "bin" => Self::utia_from_path(path),
             "binary" => Self::merl_from_path(path),
-            "dat" => Self::mit_from_path(path),
             _ => Err(eyre!("BRDF file has no extension name, cannot infer type")),
         }
     }

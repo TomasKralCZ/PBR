@@ -39,7 +39,6 @@ pub struct TexturePorts {
     pub irradiance: u32,
     pub prefilter: u32,
     pub brdf: u32,
-    pub raw_brdf: u32,
 }
 
 #[derive(Serialize)]
@@ -80,7 +79,6 @@ pub const CONSTS: Consts = Consts {
         irradiance: 8,
         prefilter: 9,
         brdf: 10,
-        raw_brdf: 11,
     },
     buffer_bindings: BufferBindings {
         transforms: 0,

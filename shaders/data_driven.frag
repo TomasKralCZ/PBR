@@ -61,12 +61,6 @@ vec3 calculateDirectLighting(ShadingParams sp)
     return totalRadiance;
 }
 
-vec3 calculateIBL(ShadingParams sp)
-{
-    vec3 reflectDir = reflect(-sp.viewDir, sp.tb.normal);
-    return texture(rawBrdfMap, reflectDir).rgb;
-}
-
 ShadingParams initShadingParams()
 {
     ShadingParams sp;
@@ -91,10 +85,6 @@ void main()
     ShadingParams sp = initShadingParams();
 
     vec3 color = vec3(0.);
-
-    if (IBLEnabled) {
-        color += calculateIBL(sp);
-    }
 
     if (directLightEnabled) {
         color += calculateDirectLighting(sp);

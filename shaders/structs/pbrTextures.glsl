@@ -35,5 +35,4 @@ layout(binding = {{consts.texture_ports.clearcoat_normal}}) uniform sampler2D cl
 layout(binding = {{consts.texture_ports.irradiance}}) uniform samplerCube irradianceMap;
 layout(binding = {{consts.texture_ports.prefilter}}) uniform samplerCube prefilterMap;
 layout(binding = {{consts.texture_ports.brdf}}) uniform sampler2D brdfLut;
-layout(binding = {{consts.texture_ports.raw_brdf}}) uniform samplerCube rawBrdfMap;
 // clang-format on
