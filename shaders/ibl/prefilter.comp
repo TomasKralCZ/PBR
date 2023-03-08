@@ -15,6 +15,7 @@ layout(rgba32f, binding = 1) uniform writeonly imageCube prefilterMap;
 
 uniform float linearRoughness;
 
+// Based on "Moving Frostbite to Physically Based Rendering 3.0"
 void main()
 {
     uvec3 globalId = gl_GlobalInvocationID.xyz;

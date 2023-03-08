@@ -15,7 +15,7 @@ layout(rgba32f, binding = 1) uniform writeonly imageCube cubemap;
 const vec2 pi_reciprocals = vec2(0.1591, 0.3183);
 
 // This maps a point from a sphere to a point on the equirectangular map.
-// https://en.wikipedia.org/wiki/UV_mapping#Finding_UV_on_a_sphere
+// Based on https://learnopengl.com/PBR/IBL/Diffuse-irradiance
 vec2 sampleSphericalMap(vec3 v)
 {
     vec2 uv = vec2(atan(v.z, v.x), asin(v.y));

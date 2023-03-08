@@ -11,6 +11,7 @@ layout(local_size_x = {{ consts.ibl.local_size_xy }}, local_size_y = {{ consts.i
 
 layout(rg32f, binding = 0) uniform writeonly image2D brdfLut;
 
+// Based on "Real Shading in Unreal Engine 4"
 vec2 integrateDfg(float NoV, float roughness)
 {
     // More information about calculating V and N can be found in the Filament guide:

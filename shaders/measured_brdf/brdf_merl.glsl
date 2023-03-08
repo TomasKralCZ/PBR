@@ -92,6 +92,7 @@ int phi_diff_index(float phi_diff)
     }
 }
 
+// ---------------------------------------------------------------------------------
 /*
 Copyright Disney Enterprises, Inc. All rights reserved.
 
@@ -136,7 +137,6 @@ To the extent permitted under your local laws, the contributors exclude the
 implied warranties of merchantability, fitness for a particular purpose and non-
 infringement.
 */
-
 vec3 lookup_brdf_merl(vec3 toLight, vec3 toViewer, vec3 normal, vec3 tangent, vec3 bitangent)
 {
     float NoL = dot(normal, toLight);
@@ -183,3 +183,4 @@ vec3 lookup_brdf_merl(vec3 toLight, vec3 toViewer, vec3 normal, vec3 tangent, ve
 
     return vec3(r, g, b);
 }
+// ---------------------------------------------------------------------------------

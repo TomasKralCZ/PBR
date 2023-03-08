@@ -55,7 +55,7 @@ float visibilitySmithHeightCorrelatedGgx(float NoV, float NoL, float roughness)
 }
 
 #ifdef ANISOTROPY
-// Burley, “Physically-Based Shading at Disney.”
+// Based on Burley, “Physically-Based Shading at Disney.”
 float distributionAnisotropicGgx(
     float roughness, float NoH, vec3 halfway, vec3 tangent, vec3 bitangent, float anisotropy)
 {
@@ -100,7 +100,7 @@ vec3 diffuseLambert(vec3 albedo) { return albedo; }
 
 float disneyFresnelSchlick(float fd90, float NoX) { return 1. + (fd90 - 1.) * pow(1. - NoX, 5.); }
 
-// Moving Frostbite to Physically Based Rendering 3.0
+// Based on "Moving Frostbite to Physically Based Rendering 3.0"
 vec3 diffuseFrostbite(vec3 albedo, float roughness, float NoL, float LoH, float NoV)
 {
     float energyBias = mix(0., 0.5, roughness);
@@ -113,7 +113,7 @@ vec3 diffuseFrostbite(vec3 albedo, float roughness, float NoL, float LoH, float 
     return albedo * lightScatter * viewScatter * energyFactor;
 }
 
-// Material advances in Call of Duty: WWII
+// Based on "Material advances in Call of Duty: WWII"
 vec3 diffuseCodWWII(vec3 albedo, float roughness, float NoL, float LoH, float NoH, float NoV)
 {
     float f0 = LoH + pow(1. - LoH, 5.);

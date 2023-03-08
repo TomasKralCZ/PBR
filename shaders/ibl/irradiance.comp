@@ -10,6 +10,7 @@ layout(local_size_x = {{ consts.ibl.local_size_xy }}, local_size_y = {{ consts.i
 layout(binding = 0) uniform samplerCube cubemap;
 layout(rgba32f, binding = 1) uniform writeonly imageCube irradianceMap;
 
+// Based on https://learnopengl.com/PBR/IBL/Diffuse-irradiance
 void main()
 {
     uvec3 globalId = gl_GlobalInvocationID.xyz;
