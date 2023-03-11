@@ -7,18 +7,18 @@ use std::{
 };
 use tera::*;
 
-const OUTUT_PATH: &'static str = "shaders_stitched";
+const OUTPUT_PATH: &'static str = "../shaders_stitched";
 
 fn generate_shaders() -> Result<()> {
     println!("cargo:rerun-if-changed=shaders/");
 
-    let tera = Tera::new("shaders/**")?;
+    let tera = Tera::new("../shaders/**")?;
     let mut context = Context::new();
     populate_context(&mut context);
 
-    fs::create_dir_all(OUTUT_PATH)?;
+    fs::create_dir_all(OUTPUT_PATH)?;
 
-    visit_dirs(&PathBuf::from("shaders/"), &tera, &context)?;
+    visit_dirs(&PathBuf::from("../shaders/"), &tera, &context)?;
 
     Ok(())
 }
@@ -42,14 +42,14 @@ fn visit_dirs(dir: &Path, tera: &Tera, context: &Context) -> Result<()> {
             } else {
                 let file_name = entry.file_name();
                 let file_name = file_name.to_str().unwrap();
-                let path = path.strip_prefix("shaders/")?.to_str().unwrap();
+                let path = path.strip_prefix("../shaders/")?.to_str().unwrap();
                 let path = path.replace("\\", "/");
 
                 if !file_name.ends_with("glsl") {
                     let mut result = Vec::from(NOTICE);
                     tera.render_to(&path, &context, &mut result)?;
 
-                    let output_path = PathBuf::from(OUTUT_PATH).join(file_name);
+                    let output_path = PathBuf::from(OUTPUT_PATH).join(file_name);
                     fs::write(output_path, result)?;
                 }
             }

@@ -1,38 +1,5 @@
-[package]
-name = "pbr"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-name = "shader_constants"
-path = "shader_constants/src/lib.rs"
-
-[dependencies]
-#Latest version only has OpenGl 4.5
-gl = { git = "https://github.com/brendanzab/gl-rs" }
-# For clearcoat extension (main branch doesn't have it yet)
-gltf = { git = "https://github.com/TomasKralCZ/gltf/", branch = "clearcoat", version = "*", features = ["KHR_lights_punctual", "KHR_materials_clearcoat"] }
-image = { version = "0.24.2", features = ["png", "jpeg", "hdr"] }
-
-[target.'cfg(windows)'.dependencies]
-windows = { version = "0.44", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"]}
-
-sdl2 = { version = "0.35", features = ["bundled", "static-link"] }
-egui = "0.16"
-egui_sdl2_gl = "0.16.0"
-spin_sleep = "1.1.1"
-
-serde = { version = "1.0", features = ["derive"] }
-cstr = "0.2.11"
-glam = { version = "0.22", features = ["glam-assert", "bytemuck"] }
-bytemuck = { version = "1.9.1", features = ["derive"] }
-eyre = "0.6.7"
-globwalk = "0.8.1"
-
-[build-dependencies]
-tera = { version = "1.17", default-features = false }
-eyre = "0.6.7"
-shader_constants = { path = "shader_constants"}
+[workspace]
+members = ["pbr", "shader_constants"]
 
 [profile.dev]
 opt-level = 1
