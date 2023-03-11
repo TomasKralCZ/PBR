@@ -2,7 +2,7 @@
 vec3 directionFromCubemapUv(uvec3 gid, float cubemapSize)
 {
     // Map from (0, size) to (0, 1)
-    vec2 uv = vec2(gid.xy + 0.5) / cubemapSize;
+    vec2 uv = vec2(vec2(gid.xy) + 0.5) / cubemapSize;
     // Map from (0, 1) to (-1, 1)
     uv = (uv * 2.0) - 1.0;
 
