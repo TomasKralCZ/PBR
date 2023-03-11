@@ -124,7 +124,12 @@ impl Renderer {
         let scale = Vec3::splat(app_settings.model_scale);
         let translation = app_settings.model_translation;
         let rot = app_settings.model_rotation;
-        let rotation = Quat::from_euler(glam::EulerRot::XYZ, rot.x, rot.y, rot.z);
+        let rotation = Quat::from_euler(
+            glam::EulerRot::XYZ,
+            rot.x.to_radians(),
+            rot.y.to_radians(),
+            rot.z.to_radians(),
+        );
 
         let settings_transform =
             Mat4::from_scale_rotation_translation(scale, rotation, translation);

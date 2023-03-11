@@ -74,9 +74,9 @@ impl Gui {
             let rot = &mut app_settings.model_rotation;
             ui.label("Rotation");
             ui.horizontal(|ui| {
-                ui.add(DragValue::new(&mut rot.x).prefix("x: ").speed(0.1));
-                ui.add(DragValue::new(&mut rot.y).prefix("y: ").speed(0.1));
-                ui.add(DragValue::new(&mut rot.z).prefix("z: ").speed(0.1));
+                ui.add(DragValue::new(&mut rot.x).prefix("x: ").speed(1.));
+                ui.add(DragValue::new(&mut rot.y).prefix("y: ").speed(1.));
+                ui.add(DragValue::new(&mut rot.z).prefix("z: ").speed(1.));
             });
         });
 
