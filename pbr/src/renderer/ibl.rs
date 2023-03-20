@@ -1,7 +1,7 @@
-use std::{fs::File, io::BufReader};
+use std::{cmp::Ordering, fs::File, io::BufReader};
 
 use cstr::cstr;
-use eyre::Result;
+use eyre::{eyre, Result};
 
 use gl::types::GLenum;
 use image::codecs::hdr;
@@ -23,9 +23,9 @@ pub struct IblEnv {
 
 impl IblEnv {
     pub fn from_equimap_path(path: &str) -> Result<Self> {
-        let cubemap_tex = Self::load_cubemap_from_equi(path)?;
-        let irradiance_tex = Self::compute_irradiance_map(cubemap_tex.id)?;
-        let prefilter_tex = Self::compute_prefilter_map(cubemap_tex.id)?;
+        let (cubemap_tex, max_radiance) = Self::load_cubemap_from_equi(path)?;
+        let irradiance_tex = Self::compute_irradiance_map(cubemap_tex.id, max_radiance)?;
+        let prefilter_tex = Self::compute_prefilter_map(cubemap_tex.id, max_radiance)?;
 
         irradiance_tex.add_label(cstr!("irradiance map"));
         prefilter_tex.add_label(cstr!("prefilter map"));
@@ -38,8 +38,9 @@ impl IblEnv {
     }
 
     /// Converts an HDR equirectangular map to a cubemap
-    fn load_cubemap_from_equi(path: &str) -> Result<GlTexture> {
+    fn load_cubemap_from_equi(path: &str) -> Result<(GlTexture, f32)> {
         let equimap = load_hdr_image(path)?;
+        let max_value = equimap.max_value;
         let equi_tex = Self::create_equi_texture(equimap);
         let cubemap_tex = Self::create_cubemap_texture(
             CONSTS.ibl.cubemap_size,
@@ -75,16 +76,36 @@ impl IblEnv {
             });
         });
 
-        Ok(cubemap_tex)
+        Ok((cubemap_tex, max_value))
     }
 
     /// Computes the diffuse irradiance map from the cubemap
-    fn compute_irradiance_map(cubemap_tex_id: TextureId) -> Result<GlTexture> {
+    fn compute_irradiance_map(cubemap_tex_id: TextureId, max_radiance: f32) -> Result<GlTexture> {
         let irradiance_tex = Self::create_cubemap_texture(IRRADIANCE_MAP_SIZE, gl::RGBA32F, 1);
         let irradiance_shader = Shader::comp_with_path("shaders_stitched/irradiance.comp")?;
 
+        println!("Computing the irradiance map...");
+
+        let (sample_delta, max_time) = match max_radiance {
+            x if x > 0. && x < 1000. => (0.01, "a few seconds"),
+            x if x > 1000. && x < 50000. => (0.005, "up to 30 seconds"),
+            _ => (0.0015, "more than a minute"),
+        };
+
+        println!(
+            "Max radiance is: {}, setting sample_delta to: {}",
+            max_radiance, sample_delta
+        );
+
+        println!(
+            "WARNING: this MIGHT take {} and MAY make your PC unresponsive",
+            max_time
+        );
+
         gl_time_query("irradiance compute shader", || {
             irradiance_shader.use_shader(|| unsafe {
+                irradiance_shader.set_f32(sample_delta, cstr!("sampleDelta"));
+
                 gl::BindTextureUnit(0, cubemap_tex_id);
                 gl::BindImageTexture(
                     1,
@@ -96,13 +117,18 @@ impl IblEnv {
                     gl::RGBA32F,
                 );
 
-                Self::dispatch_compute_divide(
-                    IRRADIANCE_MAP_SIZE as u32,
-                    IRRADIANCE_MAP_SIZE as u32,
-                    CUBEMAP_FACES,
-                );
+                // Split the compute invocations into smaller parts so the OS doesn't timeout the GPU
+                const STEP_SIZE: u32 = 8;
+                for offset_x in (0..IRRADIANCE_MAP_SIZE).step_by(STEP_SIZE as usize) {
+                    irradiance_shader.set_u32(offset_x as u32, cstr!("offset_x"));
 
-                gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                    for offset_y in (0..IRRADIANCE_MAP_SIZE).step_by(STEP_SIZE as usize) {
+                        irradiance_shader.set_u32(offset_y as u32, cstr!("offset_y"));
+
+                        Self::dispatch_compute_divide(STEP_SIZE, STEP_SIZE, CUBEMAP_FACES);
+                        gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                    }
+                }
             });
         });
 
@@ -110,10 +136,28 @@ impl IblEnv {
     }
 
     /// Computes the LD part of the specular integral
-    fn compute_prefilter_map(cubemap_tex_id: TextureId) -> Result<GlTexture> {
+    fn compute_prefilter_map(cubemap_tex_id: TextureId, max_radiance: f32) -> Result<GlTexture> {
         let size = PREFILTER_MAP_SIZE;
         let mip_levels = CONSTS.ibl.cubemap_roughnes_levels;
         let prefilter_tex = Self::create_cubemap_texture(size, gl::RGBA32F, mip_levels);
+
+        println!("Computing the prefilter map...");
+
+        let (num_samples, max_time) = match max_radiance {
+            x if x > 0. && x < 1000. => (1024, "a few seconds"),
+            x if x > 1000. && x < 50000. => (512 * 1024, "up to 30 seconds"),
+            _ => (1024 * 1024, "more than a minute"),
+        };
+
+        println!(
+            "Max radiance is: {}, setting num_samples to: {}",
+            max_radiance, num_samples
+        );
+
+        println!(
+            "WARNING: this MIGHT take {} and MAY make your PC unresponsive",
+            max_time
+        );
 
         let prefilter_shader = Shader::comp_with_path("shaders_stitched/prefilter.comp")?;
         gl_time_query("split_sum prefiltering", || {
@@ -134,10 +178,30 @@ impl IblEnv {
                         gl::RGBA32F,
                     );
 
-                    // TODO: make sure this matches the atual mip sizes...
-                    let mip_size = (PREFILTER_MAP_SIZE as f32 * 0.5f32.powi(lod)) as i32;
-                    Self::dispatch_compute_divide(mip_size as _, mip_size as _, CUBEMAP_FACES);
-                    gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                    // Less rough mip levels don't need so many samples
+                    let num_samples = match lod {
+                        0 => 1024,
+                        1 => num_samples / 4,
+                        2 => num_samples / 2,
+                        _ => num_samples,
+                    }
+                    .max(1024);
+
+                    let mip_size = PREFILTER_MAP_SIZE / 2i32.pow(lod as u32);
+                    prefilter_shader.set_i32(num_samples, cstr!("sampleCount"));
+
+                    // Split the compute invocations into smaller parts so the OS doesn't timeout the GPU
+                    const STEP_SIZE: u32 = 8;
+                    for offset_x in (0..mip_size).step_by(STEP_SIZE as usize) {
+                        prefilter_shader.set_u32(offset_x as u32, cstr!("offset_x"));
+
+                        for offset_y in (0..mip_size).step_by(STEP_SIZE as usize) {
+                            prefilter_shader.set_u32(offset_y as u32, cstr!("offset_y"));
+
+                            Self::dispatch_compute_divide(STEP_SIZE, STEP_SIZE, CUBEMAP_FACES);
+                            gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                        }
+                    }
                 }
             });
         });
@@ -239,6 +303,7 @@ struct HdrImage {
     pixels: Vec<f32>,
     width: u32,
     height: u32,
+    max_value: f32,
 }
 
 fn load_hdr_image(path: &str) -> Result<HdrImage> {
@@ -257,9 +322,19 @@ fn load_hdr_image(path: &str) -> Result<HdrImage> {
         .flat_map(|rgb| rgb.0)
         .collect();
 
+    let max_value = {
+        pixels
+            .iter()
+            .max_by(|x, y| x.partial_cmp(y).unwrap_or(Ordering::Equal))
+            .ok_or(eyre!("Couldn't find max value"))?
+    };
+
+    let max_value = *max_value;
+
     Ok(HdrImage {
         pixels,
         width,
         height,
+        max_value,
     })
 }

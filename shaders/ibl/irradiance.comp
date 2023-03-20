@@ -10,10 +10,16 @@ layout(local_size_x = {{ consts.ibl.local_size_xy }}, local_size_y = {{ consts.i
 layout(binding = 0) uniform samplerCube cubemap;
 layout(rgba32f, binding = 1) uniform writeonly imageCube irradianceMap;
 
+uniform float sampleDelta;
+uniform uint offset_x;
+uniform uint offset_y;
+
 // Based on https://learnopengl.com/PBR/IBL/Diffuse-irradiance
 void main()
 {
     uvec3 globalId = gl_GlobalInvocationID.xyz;
+    globalId.x += offset_x;
+    globalId.y += offset_y;
     vec3 normal = directionFromCubemapUv(globalId, imageSize(irradianceMap).x);
 
     // Create basis vectors
@@ -23,7 +29,6 @@ void main()
 
     vec3 irradiance = vec3(0.);
 
-    float sampleDelta = 0.025;
     int sampleCount = 0;
 
     for (float phi = 0.; phi < 2. * PI; phi += sampleDelta) {
