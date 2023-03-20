@@ -127,6 +127,7 @@ impl IblEnv {
 
                         Self::dispatch_compute_divide(STEP_SIZE, STEP_SIZE, CUBEMAP_FACES);
                         gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                        gl::Finish();
                     }
                 }
             });
@@ -200,6 +201,7 @@ impl IblEnv {
 
                             Self::dispatch_compute_divide(STEP_SIZE, STEP_SIZE, CUBEMAP_FACES);
                             gl::MemoryBarrier(gl::SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                            gl::Finish();
                         }
                     }
                 }
