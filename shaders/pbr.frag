@@ -166,8 +166,8 @@ vec3 calcClearcoatIBL(ShadingParams sp, inout vec3 baseLayerEnvLight)
 
     // Apply clearcoat IBL
     vec3 clearcoatPrefilteredLight
-        = textureLod(prefilterMap, clearcoatReflectDir, sp.clearcoatRoughness * MAX_REFLECTION_LOD).rgb;
-    vec2 clearcoatDfg = texture(brdfLut, vec2(sp.clearcoatNoV, sp.clearcoatRoughness)).rg;
+        = textureLod(prefilterMap, clearcoatReflectDir, sqrt(sp.clearcoatRoughness) * MAX_REFLECTION_LOD).rgb;
+    vec2 clearcoatDfg = texture(brdfLut, vec2(sp.clearcoatNoV, sqrt(sp.clearcoatRoughness))).rg;
     vec3 clearcoatIblSpecular
         = clearcoatPrefilteredLight * (clearcoatFresnel * clearcoatDfg.x + clearcoatDfg.y);
 
@@ -205,9 +205,9 @@ vec3 calculateIBL(ShadingParams sp)
     // clang-format off
     const float MAX_REFLECTION_LOD = float({{ consts.ibl.cubemap_roughnes_levels - 1 }});
     // clang-format on
-    vec3 prefilteredRadiance = textureLod(prefilterMap, reflectDir, sp.roughness * MAX_REFLECTION_LOD).rgb;
+    vec3 prefilteredRadiance = textureLod(prefilterMap, reflectDir, sqrt(sp.roughness) * MAX_REFLECTION_LOD).rgb;
     vec3 irradiance = texture(irradianceMap, sp.tb.normal).rgb;
-    vec2 dfg = texture(brdfLut, vec2(sp.NoV, sp.roughness)).rg;
+    vec2 dfg = texture(brdfLut, vec2(sp.NoV, sqrt(sp.roughness))).rg;
 
     // Based on Fdez-Agüera, “A Multiple-Scattering Microfacet Model for Real-Time Image Based Lighting.”
     vec3 fresnel
