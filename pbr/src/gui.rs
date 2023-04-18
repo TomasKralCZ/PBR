@@ -45,6 +45,7 @@ impl Gui {
     }
 
     fn right_panel(&mut self, ui: &mut Ui) {
+        let resources = self.resources.get_mut();
         let mut app_settings = self.app_settings.get_mut();
 
         egui::global_dark_light_mode_switch(ui);
@@ -111,8 +112,16 @@ impl Gui {
 
                 ui.radio_value(selected, Gltf, Gltf.to_str());
                 ui.radio_value(selected, PbrOverride, PbrOverride.to_str());
-                ui.radio_value(selected, MerlBrdf, MerlBrdf.to_str());
-                ui.radio_value(selected, UtiaBrdf, UtiaBrdf.to_str());
+
+                let merl_enabled = !resources.merl_brdfs.is_empty();
+                ui.add_enabled_ui(merl_enabled, |ui| {
+                    ui.radio_value(selected, MerlBrdf, MerlBrdf.to_str());
+                });
+
+                let utia_enabled = !resources.utia_brdfs.is_empty();
+                ui.add_enabled_ui(utia_enabled, |ui| {
+                    ui.radio_value(selected, UtiaBrdf, UtiaBrdf.to_str());
+                });
             });
 
             ui.separator();
